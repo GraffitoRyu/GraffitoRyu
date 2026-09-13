@@ -5,15 +5,15 @@
 > **Built for the domain. Clear to the team. Flexible for what comes next.**
 
 I prefer to understand the context before choosing the tool or abstraction.  
-I aim for systems that fit their domain, stay clear to the team, and leave room to evolve where it matters.
+I aim to build around the domain and existing conventions, keeping systems clear for the team and flexible where it matters.
 
 ## Principles
 
 **Understand first. Build with intention.**
 
-- Start from the domain, constraints, and existing conventions.
-- Keep the common path clear enough for the team to follow and maintain.
-- Keep abstractions scoped to the domain, with room for extension and customization.
+- Start with the domain, constraints, and conventions.
+- Keep the common path clear for the team.
+- Abstract within the domain. Leave room to extend and customize.
 
 ## Core stack
 
@@ -26,8 +26,6 @@ I aim for systems that fit their domain, stay clear to the team, and leave room 
 ### Tools I reach for when they fit
 
 `TanStack Query` · `Jotai` · `SCSS` · `pnpm` · `Turborepo` · `Figma`
-
-> **Clear enough to understand. Flexible enough to evolve.**
 
 ## Links
 
