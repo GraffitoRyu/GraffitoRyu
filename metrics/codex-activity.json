@@ -1,0 +1,229 @@
+{
+  "schemaVersion": 1,
+  "metricScope": "observed-local-codex",
+  "timezone": "Asia/Seoul",
+  "window": {
+    "from": "2026-08-16",
+    "to": "2026-09-14"
+  },
+  "asOfDate": "2026-09-14",
+  "completeThroughDate": null,
+  "status": "partial",
+  "summary": {
+    "activeDays": 30,
+    "sessionDays": null,
+    "toolCalls": null
+  },
+  "days": [
+    {
+      "date": "2026-08-16",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-08-17",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-08-18",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-08-19",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-08-20",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-08-21",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-08-22",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-08-23",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-08-24",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-08-25",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-08-26",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-08-27",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-08-28",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-08-29",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-08-30",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-08-31",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-09-01",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-09-02",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-09-03",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-09-04",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-09-05",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-09-06",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-09-07",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-09-08",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-09-09",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-09-10",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-09-11",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-09-12",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-09-13",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-09-14",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    }
+  ]
+}
