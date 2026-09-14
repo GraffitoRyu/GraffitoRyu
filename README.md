@@ -6,11 +6,7 @@
 
 **Built for the domain. Clear to the team. Flexible for what comes next.**
 
-<p>
-  <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/React-20232A?style=flat-square&logo=react&logoColor=61DAFB" alt="React" />
-  <img src="https://img.shields.io/badge/Next.js-000000?style=flat-square&logo=nextdotjs&logoColor=white" alt="Next.js" />
-</p>
+`TypeScript` · `React` · `Next.js`
 
 [Website](https://ryudh.com) · [Resume](https://ryudh-dev-resume.vercel.app/)
 
@@ -47,8 +43,24 @@ I use Codex for implementation, refactoring, review, and repeatable development 
 
 ## Current toolchain
 
-**Core** — `TypeScript` · `React` · `Next.js`  
-**Data & state** — `TanStack Query` · `Jotai`  
-**Styling** — `SCSS`  
-**Tooling** — `pnpm` · `Turborepo` · `ESLint`  
-**Design** — `Figma`
+**Core**
+
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)
+![React](https://img.shields.io/badge/React-20232A?style=flat-square&logo=react&logoColor=61DAFB)
+![Next.js](https://img.shields.io/badge/Next.js-000000?style=flat-square&logo=nextdotjs&logoColor=white)
+
+**Data & state**
+
+![TanStack Query](https://img.shields.io/badge/TanStack_Query-FF4154?style=flat-square&logo=reactquery&logoColor=white)
+![Jotai](https://img.shields.io/badge/Jotai-000000?style=flat-square)
+
+**Tooling**
+
+![pnpm](https://img.shields.io/badge/pnpm-F69220?style=flat-square&logo=pnpm&logoColor=white)
+![Turborepo](https://img.shields.io/badge/Turborepo-000000?style=flat-square&logo=turborepo&logoColor=white)
+![ESLint](https://img.shields.io/badge/ESLint-4B32C3?style=flat-square&logo=eslint&logoColor=white)
+
+**Styling & design**
+
+![Sass](https://img.shields.io/badge/SCSS-CC6699?style=flat-square&logo=sass&logoColor=white)
+![Figma](https://img.shields.io/badge/Figma-F24E1E?style=flat-square&logo=figma&logoColor=white)
