@@ -21,6 +21,10 @@
 I prefer to understand the context before choosing the tool or abstraction.  
 I build around the domain and existing conventions, keeping the common path clear for the team and flexibility where it matters.
 
+## Codex activity
+
+![Observed local Codex activity over the last 30 days](./assets/codex-activity.svg)
+
 ## Principles
 
 **Understand first. Build with intention.**
