@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="900" height="260" viewBox="0 0 900 260" role="img" aria-labelledby="title desc">
-  <title id="title">AI-assisted development workflow</title>
-  <desc id="desc">A four-step workflow: Context, Delegate, Verify, Integrate.</desc>
+  <title id="title">Agent-driven development workflow</title>
+  <desc id="desc">A human-led four-step workflow: Context, Delegate, Verify, Integrate.</desc>
   <defs>
     <style>
       .bg{fill:#ffffff;stroke:#d0d7de}.title,.label,.body,.step,.footer{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;fill:#1f2328}.muted{fill:#57606a}.card{fill:#f6f8fa;stroke:#d8dee4}.accent{fill:#0969da}.line{stroke:#afb8c1}
@@ -10,8 +10,8 @@
 
   <rect class="bg" x="0.5" y="0.5" width="899" height="259" rx="14"/>
 
-  <text class="title" x="28" y="38" font-size="20" font-weight="700">AI-assisted development</text>
-  <text class="muted" x="28" y="59" font-size="12">How I work with agents while keeping context, judgment, and verification explicit.</text>
+  <text class="title" x="28" y="38" font-size="20" font-weight="700">Agent-driven Development</text>
+  <text class="muted" x="28" y="59" font-size="12">Human-led context, judgment, and verification.</text>
 
   <line class="line" x1="115" y1="109" x2="785" y2="109" stroke-width="2"/>
 
