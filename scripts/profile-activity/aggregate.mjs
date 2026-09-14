@@ -9,6 +9,9 @@ export function aggregateSnapshots(inputs, options) {
   const snapshots = chooseLatestSnapshots(inputs, options.expectedSourceIds);
   if (snapshots.some((snapshot) => new Date(snapshot.collectedAt) - referenceTime > 5 * 60 * 1000)) throw new Error('snapshot is too far in the future');
   const from = addDays(asOfDate, -29);
+  const profile = snapshots.length === 2 && snapshots.every((snapshot) => snapshot.schemaVersion === 2);
+  const aggregation = options.independentSources === true ? 'sum' : 'lower-bound';
+  const combine = (values) => aggregation === 'sum' ? values.reduce((sum, value) => sum + value, 0) : Math.max(...values);
   const bySource = new Map(snapshots.map((snapshot) => [snapshot.sourceId, new Map(snapshot.days.map((day) => [day.date, day]))]));
   const days = [];
   for (let date = from; date <= asOfDate; date = addDays(date, 1)) {
@@ -17,13 +20,21 @@ export function aggregateSnapshots(inputs, options) {
     const anyActive = sourceDays.some((day) => day?.active === true);
     const allInactive = sourceDays.every((day) => day?.active === false);
     const active = anyActive ? true : allInactive ? false : null;
-    const countsKnown = allKnown && options.independentSources === true && sourceDays.every((day) => day.activeSessions !== null && day.toolCalls !== null);
-    const coverage = sourceDays.every((day) => day?.coverage === 'complete') ? 'complete' : sourceDays.some((day) => day && day.coverage !== 'unknown') ? 'partial' : 'unknown';
+    const countKeys = profile ? ['activeSessions', 'toolCalls', 'tokens', 'maxSessionTokens', 'longestSessionMinutes'] : ['activeSessions', 'toolCalls'];
+    const countsKnown = allKnown && (profile || options.independentSources === true) && sourceDays.every((day) => countKeys.every((key) => day[key] !== null));
+    const complete = sourceDays.every((day) => day?.coverage === 'complete') && (options.independentSources === true || !profile);
+    const coverage = complete ? 'complete' : sourceDays.some((day) => day && day.coverage !== 'unknown') ? 'partial' : 'unknown';
+    const values = (key) => sourceDays.map((day) => day[key]);
     days.push({
       date,
       active,
-      activeSessions: countsKnown ? sourceDays.reduce((sum, day) => sum + day.activeSessions, 0) : null,
-      toolCalls: countsKnown ? sourceDays.reduce((sum, day) => sum + day.toolCalls, 0) : null,
+      activeSessions: countsKnown ? combine(values('activeSessions')) : null,
+      toolCalls: countsKnown ? combine(values('toolCalls')) : null,
+      ...(profile && {
+        tokens: countsKnown ? combine(values('tokens')) : null,
+        maxSessionTokens: countsKnown ? Math.max(...values('maxSessionTokens')) : null,
+        longestSessionMinutes: countsKnown ? Math.max(...values('longestSessionMinutes')) : null,
+      }),
       coverage,
     });
   }
@@ -34,21 +45,46 @@ export function aggregateSnapshots(inputs, options) {
     completeThroughDate = day.date;
   }
   const every = (key) => days.every((day) => day[key] !== null);
+  const lowerBound = profile && aggregation === 'lower-bound';
+  const known = (key) => days.map((day) => day[key]).filter((value) => value !== null);
+  const total = (key) => every(key) || lowerBound && known(key).length ? known(key).reduce((sum, value) => sum + value, 0) : null;
+  const maximum = (key) => every(key) || lowerBound && known(key).length ? Math.max(...known(key)) : null;
   const summary = {
-    activeDays: every('active') ? days.filter((day) => day.active).length : null,
-    sessionDays: every('activeSessions') ? days.reduce((sum, day) => sum + day.activeSessions, 0) : null,
-    toolCalls: every('toolCalls') ? days.reduce((sum, day) => sum + day.toolCalls, 0) : null,
+    activeDays: every('active') || lowerBound && known('active').length ? days.filter((day) => day.active).length : null,
+    sessionDays: total('activeSessions'),
+    toolCalls: total('toolCalls'),
   };
+  if (profile) {
+    const activeKnown = every('active') || lowerBound && known('active').length;
+    let currentStreakDays = activeKnown ? 0 : null;
+    let longestStreakDays = activeKnown ? 0 : null;
+    let run = 0;
+    if (activeKnown) {
+      for (const day of days) {
+        run = day.active ? run + 1 : 0;
+        longestStreakDays = Math.max(longestStreakDays, run);
+      }
+      for (let index = days.length - 1; index >= 0 && days[index].active; index -= 1) currentStreakDays += 1;
+    }
+    Object.assign(summary, {
+      totalTokens: total('tokens'),
+      maxSessionTokens: maximum('maxSessionTokens'),
+      longestSessionMinutes: maximum('longestSessionMinutes'),
+      currentStreakDays,
+      longestStreakDays,
+    });
+  }
   const unavailable = snapshots.length !== 2 || days.every((day) => day.active === null);
   const ready = !unavailable && fresh && days.every((day) => day.coverage === 'complete') && Object.values(summary).every((value) => value !== null);
   return parsePublicActivity({
-    schemaVersion: 1,
+    schemaVersion: profile ? 2 : 1,
     metricScope: 'observed-local-codex',
     timezone: 'Asia/Seoul',
     window: { from, to: asOfDate },
     asOfDate,
     completeThroughDate,
     status: unavailable ? 'unavailable' : ready ? 'ready' : 'partial',
+    ...(profile && { aggregation }),
     summary,
     days,
   });

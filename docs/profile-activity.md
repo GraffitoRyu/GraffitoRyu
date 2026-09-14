@@ -2,9 +2,9 @@
 
 This repository contains a dependency-free Node.js collector and publisher for an optional profile activity graph.
 
-The collector converts explicitly allowed local Codex JSONL records into private daily snapshots. Raw prompts, responses, tool arguments, paths, session identifiers, source identifiers, credentials, and device details are never public output. The public schema contains only a 30-day date window, coverage, active-day/session-day/tool-call counts, and fixed labels.
+The collector converts explicitly allowed local Codex JSONL records into private daily snapshots. Raw prompts, responses, tool arguments, paths, session identifiers, source identifiers, credentials, device details, model names, and skill or plugin names are never public output. The public schema contains only a 30-day date window, coverage, aggregate counts, durations, streaks, and fixed labels.
 
-`activeSessions` is a daily logical-session count, so its period total is labelled **Session-days**, not unique sessions. `toolCalls` counts observed tool-call requests, not successful work, code volume, or productivity. Missing or unverified data remains unavailable rather than becoming zero. Tokens and costs are intentionally unsupported.
+`activeSessions` is a daily logical-session count, so its period total is labelled **Session-days**, not unique sessions. `toolCalls` counts observed tool-call requests, not successful work, code volume, or productivity. Token counts are deltas of locally observed cumulative Codex session telemetry; they are not OpenAI billing, quota, cost, or an official account-wide usage report. Missing or unverified data remains unavailable rather than becoming zero. When the two sources are not verified as independent, additive metrics publish only the greater per-day observation and are labelled as a conservative lower bound.
 
 ## Development checks
 

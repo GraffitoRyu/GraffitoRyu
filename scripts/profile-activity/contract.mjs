@@ -1,8 +1,11 @@
 const PRIVATE_KEYS = ['schemaVersion', 'sourceId', 'revision', 'policyId', 'collectedAt', 'timezone', 'window', 'days'];
 const PUBLIC_KEYS = ['schemaVersion', 'metricScope', 'timezone', 'window', 'asOfDate', 'completeThroughDate', 'status', 'summary', 'days'];
+const PROFILE_PUBLIC_KEYS = [...PUBLIC_KEYS, 'aggregation'];
 const DAY_KEYS = ['date', 'active', 'activeSessions', 'toolCalls', 'coverage'];
+const PROFILE_DAY_KEYS = [...DAY_KEYS, 'tokens', 'maxSessionTokens', 'longestSessionMinutes'];
 const WINDOW_KEYS = ['from', 'to'];
 const SUMMARY_KEYS = ['activeDays', 'sessionDays', 'toolCalls'];
+const PROFILE_SUMMARY_KEYS = [...SUMMARY_KEYS, 'totalTokens', 'maxSessionTokens', 'longestSessionMinutes', 'currentStreakDays', 'longestStreakDays'];
 const COVERAGE = new Set(['complete', 'partial', 'unknown']);
 
 function object(value, name) {
@@ -45,12 +48,12 @@ function parseWindow(value) {
   return { from, to };
 }
 
-function parseDays(value, window) {
+function parseDays(value, window, profile = false) {
   if (!Array.isArray(value)) throw new Error('invalid days');
   const expectedLength = Math.round((new Date(`${window.to}T00:00:00Z`) - new Date(`${window.from}T00:00:00Z`)) / 86400000) + 1;
   if (value.length !== expectedLength) throw new Error('incomplete days window');
   return value.map((day, index) => {
-    exactKeys(day, DAY_KEYS, 'day');
+    exactKeys(day, profile ? PROFILE_DAY_KEYS : DAY_KEYS, 'day');
     const date = parseDate(day.date);
     if (date !== addDays(window.from, index)) throw new Error('days must be contiguous');
     if (day.active !== null && typeof day.active !== 'boolean') throw new Error('invalid active');
@@ -58,26 +61,32 @@ function parseDays(value, window) {
     const toolCalls = nullableCount(day.toolCalls, 'toolCalls');
     if (!COVERAGE.has(day.coverage)) throw new Error('invalid coverage');
     if (day.coverage === 'unknown' && (day.active !== null || activeSessions !== null || toolCalls !== null)) throw new Error('unknown day has values');
-    return { date, active: day.active, activeSessions, toolCalls, coverage: day.coverage };
+    if (!profile) return { date, active: day.active, activeSessions, toolCalls, coverage: day.coverage };
+    const tokens = nullableCount(day.tokens, 'tokens');
+    const maxSessionTokens = nullableCount(day.maxSessionTokens, 'maxSessionTokens');
+    const longestSessionMinutes = nullableCount(day.longestSessionMinutes, 'longestSessionMinutes');
+    if (day.coverage === 'unknown' && [tokens, maxSessionTokens, longestSessionMinutes].some((item) => item !== null)) throw new Error('unknown day has profile values');
+    return { date, active: day.active, activeSessions, toolCalls, tokens, maxSessionTokens, longestSessionMinutes, coverage: day.coverage };
   });
 }
 
 export function parsePrivateSnapshot(value) {
   exactKeys(value, PRIVATE_KEYS, 'private snapshot');
-  if (value.schemaVersion !== 1) throw new Error('unsupported private schema');
+  if (![1, 2].includes(value.schemaVersion)) throw new Error('unsupported private schema');
   if (typeof value.sourceId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.sourceId)) throw new Error('invalid sourceId');
   if (!Number.isSafeInteger(value.revision) || value.revision < 1) throw new Error('invalid revision');
   if (value.policyId !== 'local-codex-v1-kst-exclude-profile') throw new Error('invalid policyId');
   if (value.timezone !== 'Asia/Seoul') throw new Error('invalid timezone');
   if (typeof value.collectedAt !== 'string' || Number.isNaN(Date.parse(value.collectedAt))) throw new Error('invalid collectedAt');
   const window = parseWindow(value.window);
-  const days = parseDays(value.days, window);
-  return { schemaVersion: 1, sourceId: value.sourceId, revision: value.revision, policyId: value.policyId, collectedAt: new Date(value.collectedAt).toISOString(), timezone: value.timezone, window, days };
+  const days = parseDays(value.days, window, value.schemaVersion === 2);
+  return { schemaVersion: value.schemaVersion, sourceId: value.sourceId, revision: value.revision, policyId: value.policyId, collectedAt: new Date(value.collectedAt).toISOString(), timezone: value.timezone, window, days };
 }
 
 export function parsePublicActivity(value) {
-  exactKeys(value, PUBLIC_KEYS, 'public activity');
-  if (value.schemaVersion !== 1 || value.metricScope !== 'observed-local-codex' || value.timezone !== 'Asia/Seoul') throw new Error('invalid public identity');
+  const profile = value?.schemaVersion === 2;
+  exactKeys(value, profile ? PROFILE_PUBLIC_KEYS : PUBLIC_KEYS, 'public activity');
+  if (![1, 2].includes(value.schemaVersion) || value.metricScope !== 'observed-local-codex' || value.timezone !== 'Asia/Seoul') throw new Error('invalid public identity');
   const window = parseWindow(value.window);
   if (addDays(window.from, 29) !== window.to) throw new Error('public window must contain 30 days');
   const asOfDate = parseDate(value.asOfDate, 'asOfDate');
@@ -85,13 +94,17 @@ export function parsePublicActivity(value) {
   const completeThroughDate = value.completeThroughDate === null ? null : parseDate(value.completeThroughDate, 'completeThroughDate');
   if (completeThroughDate && (completeThroughDate < window.from || completeThroughDate > window.to)) throw new Error('invalid completeThroughDate range');
   if (!new Set(['ready', 'partial', 'unavailable']).has(value.status)) throw new Error('invalid status');
-  exactKeys(value.summary, SUMMARY_KEYS, 'summary');
+  exactKeys(value.summary, profile ? PROFILE_SUMMARY_KEYS : SUMMARY_KEYS, 'summary');
   const summary = {
     activeDays: nullableCount(value.summary.activeDays, 'summary.activeDays'),
     sessionDays: nullableCount(value.summary.sessionDays, 'summary.sessionDays'),
     toolCalls: nullableCount(value.summary.toolCalls, 'summary.toolCalls'),
   };
-  return { schemaVersion: 1, metricScope: value.metricScope, timezone: value.timezone, window, asOfDate, completeThroughDate, status: value.status, summary, days: parseDays(value.days, window) };
+  if (profile) {
+    if (!['sum', 'lower-bound'].includes(value.aggregation)) throw new Error('invalid aggregation');
+    for (const key of PROFILE_SUMMARY_KEYS.slice(3)) summary[key] = nullableCount(value.summary[key], `summary.${key}`);
+  }
+  return { schemaVersion: value.schemaVersion, metricScope: value.metricScope, timezone: value.timezone, window, asOfDate, completeThroughDate, status: value.status, ...(profile && { aggregation: value.aggregation }), summary, days: parseDays(value.days, window, profile) };
 }
 
 export function isPublishableActivity(value) {

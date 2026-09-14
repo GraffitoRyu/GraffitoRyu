@@ -6,6 +6,7 @@ import readline from 'node:readline';
 import { addDays } from './contract.mjs';
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024;
+const CACHE_VERSION = 2;
 
 function typeOf(value) {
   return value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
@@ -58,10 +59,10 @@ async function boundaryHash(file, offset) {
 async function scanFile(file, previous = undefined) {
   // ponytail: a 4 KiB boundary fingerprint avoids rescanning large unchanged files; use a full rolling digest if adversarial in-place rewrites become a real input.
   const boundaryMatches = previous?.boundaryHash === await boundaryHash(file.path, previous?.offset ?? 0);
-  const append = previous && previous.offset <= file.size && boundaryMatches && (previous.offset < file.size || previous.mtimeMs === file.mtimeMs);
+  const append = previous?.cacheVersion === CACHE_VERSION && previous.offset <= file.size && boundaryMatches && (previous.offset < file.size || previous.mtimeMs === file.mtimeMs);
   const state = append
     ? { ...previous, events: [...previous.events], unknownDates: [...(previous.unknownDates ?? [])] }
-    : { offset: 0, sessionId: null, excluded: false, events: [], unknownDates: [], partial: false, historyStartOrdinal: null, unknownInheritance: false, excludedRoots: previous?.excludedRoots ?? [] };
+    : { cacheVersion: CACHE_VERSION, offset: 0, sessionId: null, excluded: false, events: [], unknownDates: [], partial: false, historyStartOrdinal: null, unknownInheritance: false, forked: false, tokenBaseline: null, excludedRoots: previous?.excludedRoots ?? [] };
   if (state.offset === file.size) return state;
   const stream = createReadStream(file.path, { start: state.offset, end: file.size - 1, encoding: 'utf8' });
   const lines = readline.createInterface({ input: stream, crlfDelay: Infinity });
@@ -96,9 +97,37 @@ async function scanFile(file, previous = undefined) {
       // session_id is the observed logical thread identity; id identifies a rollout segment.
       state.sessionId = sessionId ?? id;
       if (typeof payload.cwd === 'string' && state.excludedRoots?.some((root) => payload.cwd === root || payload.cwd.startsWith(`${root}${path.sep}`))) state.excluded = true;
+      state.forked = typeof payload.forked_from_id === 'string' || typeof payload.parent_thread_id === 'string';
       if (Number.isSafeInteger(payload.subagent_history_start_ordinal)) state.historyStartOrdinal = payload.subagent_history_start_ordinal;
       else if (Number.isSafeInteger(payload.forked_from_ordinal_exclusive)) state.historyStartOrdinal = payload.forked_from_ordinal_exclusive + 1;
-      else if (typeof payload.forked_from_id === 'string' || typeof payload.parent_thread_id === 'string') state.unknownInheritance = true;
+      else if (state.forked) state.unknownInheritance = true;
+      const date = kstDate(record.timestamp);
+      if (date && state.sessionId && !state.excluded) {
+        const hash = createHash('sha256').update(`${state.sessionId}\0meta\0${record.timestamp}`).digest('hex');
+        state.events.push({ date, timestamp: record.timestamp, sessionId: state.sessionId, kind: 'meta', callId: null, hash });
+      }
+      continue;
+    }
+    if (record.type === 'event_msg' && payload?.type === 'token_count') {
+      const date = kstDate(record.timestamp);
+      const totalTokens = payload.info?.total_token_usage?.total_tokens;
+      if (state.excluded) continue;
+      if (!date || !state.sessionId || !Number.isSafeInteger(totalTokens) || totalTokens < 0) {
+        if (date) state.unknownDates.push(date);
+        state.partial = true;
+        continue;
+      }
+      if (state.unknownInheritance || (state.historyStartOrdinal !== null && !Number.isSafeInteger(record.ordinal))) {
+        state.unknownDates.push(date);
+        state.partial = true;
+        continue;
+      }
+      if (state.historyStartOrdinal !== null && record.ordinal < state.historyStartOrdinal) continue;
+      if (state.forked && state.tokenBaseline === null) state.tokenBaseline = totalTokens;
+      const sessionTotal = Math.max(0, totalTokens - (state.tokenBaseline ?? 0));
+      const stableId = Number.isSafeInteger(record.ordinal) ? record.ordinal : `${record.timestamp}\0${totalTokens}`;
+      const hash = createHash('sha256').update(`${state.sessionId}\0token\0${stableId}`).digest('hex');
+      state.events.push({ date, timestamp: record.timestamp, sessionId: state.sessionId, kind: 'tokens', callId: null, hash, sessionTotal });
       continue;
     }
     if (record.type !== 'response_item' || !payload || typeof payload !== 'object') continue;
@@ -129,7 +158,7 @@ async function scanFile(file, previous = undefined) {
     }
     const stableId = typeof payload.id === 'string' ? payload.id : line;
     const hash = createHash('sha256').update(`${state.sessionId}\0${stableId}`).digest('hex');
-    state.events.push({ date, sessionId: state.sessionId, kind: eligibleCall ? 'tool' : 'activity', callId, hash });
+    state.events.push({ date, timestamp: record.timestamp, sessionId: state.sessionId, kind: eligibleCall ? 'tool' : 'activity', callId, hash });
   }
   state.offset = lastCompleteOffset;
   state.boundaryHash = await boundaryHash(file.path, state.offset);
@@ -205,6 +234,8 @@ export async function collectLogRoots({ logRoots, excludedRepoRoots = [], from, 
   const eventHashes = new Set();
   const sessionDays = new Set();
   const callDays = new Set();
+  const tokenEvents = [];
+  const sessionBounds = new Map();
   const unknownDates = new Set();
   let partial = false;
   for (const state of Object.values(nextCache.files)) {
@@ -213,17 +244,44 @@ export async function collectLogRoots({ logRoots, excludedRepoRoots = [], from, 
     for (const event of state.events) {
       if (event.date < from || event.date > to || eventHashes.has(event.hash)) continue;
       eventHashes.add(event.hash);
+      if (typeof event.timestamp === 'string' && !Number.isNaN(Date.parse(event.timestamp))) {
+        const bounds = sessionBounds.get(event.sessionId) ?? { first: event.timestamp, last: event.timestamp, lastDate: event.date };
+        if (event.timestamp < bounds.first) bounds.first = event.timestamp;
+        if (event.timestamp > bounds.last) {
+          bounds.last = event.timestamp;
+          bounds.lastDate = event.date;
+        }
+        sessionBounds.set(event.sessionId, bounds);
+      }
+      if (event.kind === 'meta') continue;
       sessionDays.add(`${event.date}\0${event.sessionId}`);
       if (event.kind === 'tool') callDays.add(`${event.date}\0${event.sessionId}\0${event.callId}`);
+      if (event.kind === 'tokens') tokenEvents.push(event);
     }
+  }
+  tokenEvents.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  const sessionTokenHigh = new Map();
+  const tokensByDate = new Map();
+  const maxSessionTokensByDate = new Map();
+  for (const event of tokenEvents) {
+    const previous = sessionTokenHigh.get(event.sessionId) ?? 0;
+    const current = Math.max(previous, event.sessionTotal);
+    tokensByDate.set(event.date, (tokensByDate.get(event.date) ?? 0) + current - previous);
+    maxSessionTokensByDate.set(event.date, Math.max(maxSessionTokensByDate.get(event.date) ?? 0, current));
+    sessionTokenHigh.set(event.sessionId, current);
+  }
+  const longestSessionByDate = new Map();
+  for (const bounds of sessionBounds.values()) {
+    const minutes = Math.max(0, Math.floor((Date.parse(bounds.last) - Date.parse(bounds.first)) / 60000));
+    longestSessionByDate.set(bounds.lastDate, Math.max(longestSessionByDate.get(bounds.lastDate) ?? 0, minutes));
   }
   const days = [];
   for (let date = from; date <= to; date = addDays(date, 1)) {
     const sessions = [...sessionDays].filter((key) => key.startsWith(`${date}\0`)).length;
     const toolCalls = [...callDays].filter((key) => key.startsWith(`${date}\0`)).length;
     days.push(unknownDates.has(date)
-      ? { date, active: sessions > 0 ? true : null, activeSessions: null, toolCalls: null, coverage: sessions > 0 ? 'partial' : 'unknown' }
-      : { date, active: sessions > 0, activeSessions: sessions, toolCalls, coverage: partial ? 'partial' : 'complete' });
+      ? { date, active: sessions > 0 ? true : null, activeSessions: null, toolCalls: null, tokens: null, maxSessionTokens: null, longestSessionMinutes: null, coverage: sessions > 0 ? 'partial' : 'unknown' }
+      : { date, active: sessions > 0, activeSessions: sessions, toolCalls, tokens: tokensByDate.get(date) ?? 0, maxSessionTokens: maxSessionTokensByDate.get(date) ?? 0, longestSessionMinutes: longestSessionByDate.get(date) ?? 0, coverage: partial ? 'partial' : 'complete' });
   }
   return { days, cache: nextCache, partial, files: files.length };
 }

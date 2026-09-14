@@ -61,6 +61,43 @@ function approveHook(config, name, content, mode = 0o700) {
   config.publisher.hooksManifest[name] = { digest: createHash('sha256').update(content).digest('hex'), mode };
 }
 
+function tokenCount(timestamp, totalTokens, ordinal) {
+  return {
+    timestamp,
+    ordinal,
+    type: 'event_msg',
+    payload: {
+      type: 'token_count',
+      info: {
+        total_token_usage: {
+          input_tokens: totalTokens,
+          cached_input_tokens: 0,
+          output_tokens: 0,
+          reasoning_output_tokens: 0,
+          total_tokens: totalTokens,
+        },
+        last_token_usage: {
+          input_tokens: totalTokens,
+          cached_input_tokens: 0,
+          output_tokens: 0,
+          reasoning_output_tokens: 0,
+          total_tokens: totalTokens,
+        },
+        model_context_window: 258400,
+      },
+    },
+  };
+}
+
+function insightSnapshot({ sourceId = SOURCE_A, sessions = 2, calls = 4, tokens = 10, maxSessionTokens = 10, longestSessionMinutes = 3 } = {}) {
+  const snapshot = makeSnapshot({ sourceId, sessions, calls });
+  return {
+    ...snapshot,
+    schemaVersion: 2,
+    days: snapshot.days.map((day) => ({ ...day, tokens, maxSessionTokens, longestSessionMinutes })),
+  };
+}
+
 test('T01 duplicate raw/archive copies do not increase counts', async () => {
   const content = rolloutLines({ events: [message('2026-09-12T01:00:00Z'), call('2026-09-12T01:01:00Z', 'call-a')] });
   const result = await collectFiles({ 'a.jsonl': content, 'archive.jsonl': content });
@@ -185,6 +222,91 @@ test('T19 unknown cross-device independence keeps counts unavailable', () => {
   assert.equal(result.summary.toolCalls, null);
 });
 
+test('T42 cumulative token snapshots count only positive session deltas', async () => {
+  const first = rolloutLines({ events: [
+    message('2026-09-12T00:01:00Z'),
+    tokenCount('2026-09-12T00:02:00Z', 100, 1),
+    tokenCount('2026-09-12T00:03:00Z', 100, 2),
+    tokenCount('2026-09-12T00:04:00Z', 250, 3),
+  ] });
+  const second = rolloutLines({ id: 'session-b', events: [tokenCount('2026-09-12T00:02:00Z', 50, 1)] });
+  const day = (await collectFiles({ 'a.jsonl': first, 'b.jsonl': second })).days[0];
+  assert.equal(day.tokens, 300);
+  assert.equal(day.maxSessionTokens, 250);
+  assert.equal(day.longestSessionMinutes, 4);
+});
+
+test('T43 fork token baseline excludes copied parent usage', async () => {
+  const records = [
+    { timestamp: '2026-09-12T00:00:00Z', type: 'session_meta', payload: { id: 'child', parent_thread_id: 'parent', subagent_history_start_ordinal: 10, cwd: '/work/project' } },
+    tokenCount('2026-09-12T00:01:00Z', 900, 9),
+    tokenCount('2026-09-12T00:02:00Z', 1000, 10),
+    tokenCount('2026-09-12T00:03:00Z', 1100, 11),
+  ];
+  const content = records.map((value) => JSON.stringify(value)).join('\n') + '\n';
+  const day = (await collectFiles({ 'child.jsonl': content })).days[0];
+  assert.equal(day.tokens, 100);
+  assert.equal(day.maxSessionTokens, 100);
+});
+
+test('T46 legacy collector caches are rebuilt for profile metrics', async () => {
+  const root = await temp();
+  await writeFile(path.join(root, 'a.jsonl'), rolloutLines({ events: [tokenCount('2026-09-12T00:02:00Z', 100, 1)] }));
+  const first = await collectLogRoots({ logRoots: [root], from: '2026-09-12', to: '2026-09-13' });
+  const legacyCache = structuredClone(first.cache);
+  for (const state of Object.values(legacyCache.files)) {
+    delete state.cacheVersion;
+    state.events = state.events.filter((event) => event.kind !== 'tokens');
+  }
+  const rebuilt = await collectLogRoots({ logRoots: [root], from: '2026-09-12', to: '2026-09-13', cache: legacyCache });
+  assert.equal(rebuilt.days[0].tokens, 100);
+});
+
+test('T47 malformed token telemetry makes its day unknown', async () => {
+  const malformed = tokenCount('2026-09-12T00:02:00Z', 100, 1);
+  malformed.payload.info.total_token_usage.total_tokens = '100';
+  const day = (await collectFiles({ 'a.jsonl': rolloutLines({ events: [malformed] }) })).days[0];
+  assert.equal(day.tokens, null);
+  assert.equal(day.coverage, 'unknown');
+});
+
+test('T44 non-independent sources publish conservative lower-bound insights', () => {
+  const result = aggregateSnapshots([
+    insightSnapshot({ sessions: 2, calls: 4, tokens: 10, maxSessionTokens: 10, longestSessionMinutes: 3 }),
+    insightSnapshot({ sourceId: SOURCE_B, sessions: 3, calls: 7, tokens: 20, maxSessionTokens: 20, longestSessionMinutes: 4 }),
+  ], { ...options, independentSources: false });
+  assert.equal(result.aggregation, 'lower-bound');
+  assert.deepEqual(result.summary, {
+    activeDays: 30,
+    sessionDays: 90,
+    toolCalls: 210,
+    totalTokens: 600,
+    maxSessionTokens: 20,
+    longestSessionMinutes: 4,
+    currentStreakDays: 30,
+    longestStreakDays: 30,
+  });
+});
+
+test('T48 lower-bound summaries retain verified partial observations', () => {
+  const snapshots = [insightSnapshot(), insightSnapshot({ sourceId: SOURCE_B, sessions: 3, calls: 7, tokens: 20, maxSessionTokens: 20, longestSessionMinutes: 4 })];
+  for (const snapshot of snapshots) {
+    const index = snapshot.days.findIndex((day) => day.date === '2026-08-15');
+    snapshot.days[index] = { date: snapshot.days[index].date, active: null, activeSessions: null, toolCalls: null, tokens: null, maxSessionTokens: null, longestSessionMinutes: null, coverage: 'unknown' };
+  }
+  const result = aggregateSnapshots(snapshots, { ...options, independentSources: false });
+  assert.deepEqual(result.summary, {
+    activeDays: 29,
+    sessionDays: 87,
+    toolCalls: 203,
+    totalTokens: 580,
+    maxSessionTokens: 20,
+    longestSessionMinutes: 4,
+    currentStreakDays: 29,
+    longestStreakDays: 29,
+  });
+});
+
 test('T20 excluded profile repository activity does not self-inflate', async () => {
   const result = await collectFiles({ 'a.jsonl': rolloutLines({ cwd: '/profile', events: [call('2026-09-12T01:00:00Z', 'a')] }) }, { excludedRepoRoots: ['/profile'] });
   assert.equal(result.days[0].toolCalls, 0);
@@ -265,6 +387,19 @@ test('T27 renderer distinguishes zero, null and large values', () => {
   assert.match(renderActivitySvg(makePublicActivity()), />0</);
   assert.match(renderActivitySvg(makePublicActivity({ unknown: true })), /Unavailable|unavailable/);
   assert.match(renderActivitySvg(makePublicActivity({ calls: 100000000 })), /3,000,000,000/);
+});
+
+test('T45 profile renderer shows safe lower-bound insights', () => {
+  const value = aggregateSnapshots([
+    insightSnapshot({ sessions: 2, calls: 4, tokens: 10, maxSessionTokens: 10, longestSessionMinutes: 3 }),
+    insightSnapshot({ sourceId: SOURCE_B, sessions: 3, calls: 7, tokens: 20, maxSessionTokens: 20, longestSessionMinutes: 4 }),
+  ], { ...options, independentSources: false });
+  const svg = renderActivitySvg(value);
+  assert.match(svg, /Codex profile/);
+  assert.match(svg, /30d tokens/);
+  assert.match(svg, /≥600/);
+  assert.match(svg, /Current streak/);
+  assert.doesNotMatch(svg, /<script|foreignObject|(?:href|src)=|on[a-z]+=/i);
 });
 
 test('T28 only one publisher acquires the lock', async () => {

@@ -83,7 +83,7 @@ async function collect(config, asOfDate, dryRun) {
   let revision = 1;
   try { revision = (await readSnapshot(snapshotFile, config.stateDir)).revision + 1; } catch {}
   const snapshot = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     sourceId: config.sourceId,
     revision,
     policyId: config.policyId,
@@ -104,6 +104,7 @@ async function collect(config, asOfDate, dryRun) {
     activeDays: known('active') ? result.days.filter((day) => day.active).length : null,
     sessionDays: known('activeSessions') ? result.days.reduce((sum, day) => sum + day.activeSessions, 0) : null,
     toolCalls: known('toolCalls') ? result.days.reduce((sum, day) => sum + day.toolCalls, 0) : null,
+    totalTokens: known('tokens') ? result.days.reduce((sum, day) => sum + day.tokens, 0) : null,
   } };
 }
 
