@@ -29,17 +29,11 @@ I work across product interfaces, design systems, and front-end foundations — 
 
 ## AI-assisted development
 
-**Understand → Delegate → Verify → Integrate**
+![AI-assisted development workflow](./assets/ai-assisted-development.svg)
 
-I use Codex for implementation, refactoring, review, and repeatable development work — while keeping context, constraints, and verification explicit.
+I use Codex for implementation, refactoring, review, and repeatable development work while keeping the product context and acceptance criteria explicit.
 
-`Agent workflows` · `Runtime verification` · `Automation`
-
-### 30-day observed Codex activity
-
-`30 active days` · `163 session-days` · `12K+ tool calls`
-
-<sub>Partial coverage · observed locally</sub>
+[Live 30-day Codex activity →](./assets/codex-activity.svg) · [How it works](./docs/profile-activity.md)
 
 ## Current toolchain
 
