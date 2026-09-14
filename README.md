@@ -7,9 +7,9 @@
 **Built for the domain. Clear to the team. Flexible for what comes next.**
 
 <p>
-  <img src="https://img.shields.io/badge/Next.js-000000?style=flat-square&logo=nextdotjs&logoColor=white" alt="Next.js" />
   <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/React-20232A?style=flat-square&logo=react&logoColor=61DAFB" alt="React" />
+  <img src="https://img.shields.io/badge/Next.js-000000?style=flat-square&logo=nextdotjs&logoColor=white" alt="Next.js" />
 </p>
 
 [Website](https://ryudh.com) · [Resume](https://ryudh-dev-resume.vercel.app/)
@@ -20,22 +20,35 @@
 
 ## About
 
-Front-end engineer with a background in web design and UI implementation.  
-I've worked across product interfaces, design systems, and the front-end foundations that support them.
+Front-end engineer with a background in web design and UI implementation.
 
-My strength is connecting design intent, domain rules, and code structure — from Figma and component APIs to state, data flow, and production code.
+I work across product interfaces, design systems, and front-end foundations — connecting design intent, domain rules, and code structure.
 
-## What I work on
+## I work across
 
-- **Product UI** — Building and refining interfaces with Next.js, TypeScript, and React.
-- **Design systems** — Shaping component APIs, tokens, and shared foundations that stay consistent without becoming overly generic.
-- **Front-end architecture** — Organizing state, data flow, module boundaries, and conventions so the codebase remains understandable as it grows.
-- **Developer workflow** — Improving type safety, testing, monorepo workflows, and AI-assisted development with explicit review and verification.
+- **Product UI** — From design to production UI and interaction.
+- **Design systems** — Components, tokens, APIs, and shared foundations.
+- **Front-end architecture** — State, data flow, module boundaries, and conventions.
+- **Developer workflow** — Type safety, testing, monorepos, and automation.
 
-## Codex activity
+## AI-assisted development
 
-![Observed local Codex activity over the last 30 days](./assets/codex-activity.svg)
+**Understand → Delegate → Verify → Integrate**
 
-## Tools I reach for when they fit
+I use Codex for implementation, refactoring, review, and repeatable development work — while keeping context, constraints, and verification explicit.
 
-`TanStack Query` · `Jotai` · `SCSS` · `pnpm` · `Turborepo` · `Figma`
+`Agent workflows` · `Runtime verification` · `Automation`
+
+### 30-day observed Codex activity
+
+`30 active days` · `163 session-days` · `12K+ tool calls`
+
+<sub>Partial coverage · observed locally</sub>
+
+## Current toolchain
+
+**Core** — `TypeScript` · `React` · `Next.js`  
+**Data & state** — `TanStack Query` · `Jotai`  
+**Styling** — `SCSS`  
+**Tooling** — `pnpm` · `Turborepo` · `ESLint`  
+**Design** — `Figma`
