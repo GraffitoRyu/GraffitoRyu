@@ -18,20 +18,23 @@
 
 ---
 
-I prefer to understand the context before choosing the tool or abstraction.  
-I build around the domain and existing conventions, keeping the common path clear for the team and flexibility where it matters.
+## About
+
+Front-end engineer with a background in web design and UI implementation.  
+I've worked across product interfaces, design systems, and the front-end foundations that support them.
+
+My strength is connecting design intent, domain rules, and code structure — from Figma and component APIs to state, data flow, and production code.
+
+## What I work on
+
+- **Product UI** — Building and refining interfaces with Next.js, TypeScript, and React.
+- **Design systems** — Shaping component APIs, tokens, and shared foundations that stay consistent without becoming overly generic.
+- **Front-end architecture** — Organizing state, data flow, module boundaries, and conventions so the codebase remains understandable as it grows.
+- **Developer workflow** — Improving type safety, testing, monorepo workflows, and AI-assisted development with explicit review and verification.
 
 ## Codex activity
 
 ![Observed local Codex activity over the last 30 days](./assets/codex-activity.svg)
-
-## Principles
-
-**Understand first. Build with intention.**
-
-- **Domain first.** Start with the domain, constraints, and conventions.
-- **Clarity for the team.** Keep common paths easy to follow and maintain.
-- **Flexible where it matters.** Abstract within the domain, with room to extend and customize.
 
 ## Tools I reach for when they fit
 
