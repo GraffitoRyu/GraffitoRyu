@@ -401,6 +401,11 @@ test('T45 profile renderer shows safe lower-bound insights', () => {
   assert.match(svg, /250M/);
   assert.match(svg, /≥9\.4K/);
   assert.match(svg, /Current streak/);
+  assert.match(svg, /Longest streak/);
+  assert.match(svg, /Token activity/);
+  assert.match(svg, /Activity insights/);
+  assert.match(svg, /Active days/);
+  assert.match(svg, /width="900" height="350"/);
   assert.doesNotMatch(svg, /<script|foreignObject|(?:href|src)=|on[a-z]+=/i);
 });
 
