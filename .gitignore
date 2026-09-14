@@ -1,0 +1,9 @@
+/.codex/
+/.profile-activity/
+/metrics/sources/
+*.jsonl
+*.log
+*.cache
+.env
+.env.*
+!.env.example
