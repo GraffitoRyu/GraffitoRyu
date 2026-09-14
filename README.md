@@ -27,9 +27,9 @@ I work across product interfaces, design systems, and front-end foundations — 
 - **Front-end architecture** — State, data flow, module boundaries, and conventions.
 - **Developer workflow** — Type safety, testing, monorepos, and automation.
 
-## AI-assisted development
+## Agent-driven Development
 
-![AI-assisted development workflow](./assets/ai-assisted-development.svg)
+![Agent-driven development workflow](./assets/ai-assisted-development.svg)
 
 I use Codex for implementation, refactoring, review, and repeatable development work while keeping the product context and acceptance criteria explicit.
 
