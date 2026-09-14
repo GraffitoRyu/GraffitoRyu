@@ -8,6 +8,10 @@ function number(value) {
   return value === null ? 'Unavailable' : value.toLocaleString('en-US');
 }
 
+function compactNumber(value) {
+  return value === null ? 'Unavailable' : new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
+}
+
 function duration(minutes) {
   if (minutes === null) return 'Unavailable';
   if (minutes < 60) return `${minutes}m`;
@@ -16,7 +20,7 @@ function duration(minutes) {
 
 function renderProfile(activity) {
   const lowerBound = activity.aggregation === 'lower-bound';
-  const count = (value) => `${lowerBound && value !== null ? '≥' : ''}${number(value)}`;
+  const count = (value) => `${lowerBound && value !== null ? '≥' : ''}${compactNumber(value)}`;
   const maximum = Math.max(1, ...activity.days.map((day) => day.tokens ?? 0));
   const cells = activity.days.map((day, index) => {
     const x = 25 + index * 21;
@@ -33,7 +37,7 @@ function renderProfile(activity) {
 <text x="24" y="34" font-size="18" font-weight="600">Codex profile</text>
 <text x="24" y="56" font-size="12" opacity=".72">Observed local Codex activity · last 30 days</text>
 <text x="24" y="91" font-size="12" opacity=".72">30d tokens</text><text x="24" y="118" font-size="22" font-weight="600">${count(activity.summary.totalTokens)}</text>
-<text x="190" y="91" font-size="12" opacity=".72">Max session</text><text x="190" y="118" font-size="22" font-weight="600">${number(activity.summary.maxSessionTokens)}</text>
+<text x="190" y="91" font-size="12" opacity=".72">Max session</text><text x="190" y="118" font-size="22" font-weight="600">${compactNumber(activity.summary.maxSessionTokens)}</text>
 <text x="355" y="91" font-size="12" opacity=".72">Longest chat</text><text x="355" y="118" font-size="22" font-weight="600">${duration(activity.summary.longestSessionMinutes)}</text>
 <text x="520" y="91" font-size="12" opacity=".72">Current streak</text><text x="520" y="118" font-size="22" font-weight="600">${number(activity.summary.currentStreakDays)}${activity.summary.currentStreakDays === null ? '' : 'd'}</text>
 ${cells}

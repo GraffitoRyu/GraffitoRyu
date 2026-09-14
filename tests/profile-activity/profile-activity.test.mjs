@@ -392,12 +392,14 @@ test('T27 renderer distinguishes zero, null and large values', () => {
 test('T45 profile renderer shows safe lower-bound insights', () => {
   const value = aggregateSnapshots([
     insightSnapshot({ sessions: 2, calls: 4, tokens: 10, maxSessionTokens: 10, longestSessionMinutes: 3 }),
-    insightSnapshot({ sourceId: SOURCE_B, sessions: 3, calls: 7, tokens: 20, maxSessionTokens: 20, longestSessionMinutes: 4 }),
+    insightSnapshot({ sourceId: SOURCE_B, sessions: 3, calls: 314, tokens: 40000000, maxSessionTokens: 250000000, longestSessionMinutes: 4 }),
   ], { ...options, independentSources: false });
   const svg = renderActivitySvg(value);
   assert.match(svg, /Codex profile/);
   assert.match(svg, /30d tokens/);
-  assert.match(svg, /≥600/);
+  assert.match(svg, /≥1\.2B/);
+  assert.match(svg, /250M/);
+  assert.match(svg, /≥9\.4K/);
   assert.match(svg, /Current streak/);
   assert.doesNotMatch(svg, /<script|foreignObject|(?:href|src)=|on[a-z]+=/i);
 });
