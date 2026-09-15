@@ -29,7 +29,13 @@ I work across product interfaces, design systems, and front-end foundations — 
 
 ## Agent-driven Development
 
+**Human-led context, judgment, and verification.**
+
 ![Agent-driven development workflow](./assets/ai-assisted-development.svg)
+
+**Understand → Delegate → Verify → Integrate**
+
+`Agent workflows` · `Runtime verification` · `Automation`
 
 I use Codex for implementation, refactoring, review, and repeatable development work while keeping the product context and acceptance criteria explicit.
 
