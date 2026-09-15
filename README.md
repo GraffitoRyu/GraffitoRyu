@@ -27,7 +27,7 @@ I work across product interfaces, design systems, and front-end foundations — 
 - **Front-end architecture** — State, data flow, module boundaries, and conventions.
 - **Developer workflow** — Type safety, testing, monorepos, and automation.
 
-## Agent-driven Development
+## Agent-Driven Development
 
 **Human-led context, judgment, and verification.**
 
@@ -41,7 +41,7 @@ I use Codex for implementation, refactoring, review, and repeatable development 
 
 [Live 30-day Codex activity →](./assets/codex-activity.svg) · [How it works](./docs/profile-activity.md)
 
-## Current toolchain
+## Tech Stack
 
 **Core**
 
