@@ -1,20 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="900" height="230" viewBox="0 0 900 230" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="128" viewBox="0 0 900 128" role="img" aria-labelledby="title desc">
   <title id="title">Agent-driven development workflow</title>
   <desc id="desc">A human-led four-step workflow: Context, Delegate, Verify, Integrate.</desc>
   <defs>
     <style>
-      .label,.body,.footer{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;fill:#1f2328}.muted{fill:#57606a}.bg{fill:#ffffff;stroke:#d0d7de}.card{fill:#f6f8fa;stroke:#d8dee4}.accent{fill:#0969da}.line{stroke:#afb8c1}
-      @media(prefers-color-scheme:dark){.label,.body,.footer{fill:#e6edf3}.muted{fill:#8b949e}.bg{fill:#0d1117;stroke:#30363d}.card{fill:#161b22;stroke:#30363d}.accent{fill:#58a6ff}.line{stroke:#484f58}}
+      .label,.body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;fill:#1f2328}.muted{fill:#57606a}.card{fill:#f6f8fa;stroke:#d8dee4}.accent{fill:#0969da}.line{stroke:#afb8c1}
+      @media(prefers-color-scheme:dark){.label,.body{fill:#e6edf3}.muted{fill:#8b949e}.card{fill:#161b22;stroke:#30363d}.accent{fill:#58a6ff}.line{stroke:#484f58}}
     </style>
   </defs>
 
-  <rect class="bg" x="0.5" y="0.5" width="899" height="229" rx="14"/>
+  <line class="line" x1="115" y1="39" x2="785" y2="39" stroke-width="2"/>
 
-  <text class="muted" x="28" y="30" font-size="12">Human-led context, judgment, and verification.</text>
-
-  <line class="line" x1="115" y1="83" x2="785" y2="83" stroke-width="2"/>
-
-  <g transform="translate(28 52)">
+  <g transform="translate(28 8)">
     <rect class="card" x="0" y="0" width="190" height="112" rx="10"/>
     <circle class="accent" cx="24" cy="28" r="12"/>
     <text x="24" y="32" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">01</text>
@@ -23,7 +19,7 @@
     <text class="body muted" x="16" y="80" font-size="12">Conventions · History</text>
   </g>
 
-  <g transform="translate(246 52)">
+  <g transform="translate(246 8)">
     <rect class="card" x="0" y="0" width="190" height="112" rx="10"/>
     <circle class="accent" cx="24" cy="28" r="12"/>
     <text x="24" y="32" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">02</text>
@@ -32,7 +28,7 @@
     <text class="body muted" x="16" y="80" font-size="12">Review · Repetitive work</text>
   </g>
 
-  <g transform="translate(464 52)">
+  <g transform="translate(464 8)">
     <rect class="card" x="0" y="0" width="190" height="112" rx="10"/>
     <circle class="accent" cx="24" cy="28" r="12"/>
     <text x="24" y="32" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">03</text>
@@ -41,7 +37,7 @@
     <text class="body muted" x="16" y="80" font-size="12">Interaction · Review</text>
   </g>
 
-  <g transform="translate(682 52)">
+  <g transform="translate(682 8)">
     <rect class="card" x="0" y="0" width="190" height="112" rx="10"/>
     <circle class="accent" cx="24" cy="28" r="12"/>
     <text x="24" y="32" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">04</text>
@@ -49,7 +45,4 @@
     <text class="body muted" x="16" y="61" font-size="12">Codebase · Automation</text>
     <text class="body muted" x="16" y="80" font-size="12">Git safety · Handoff</text>
   </g>
-
-  <text class="footer" x="450" y="194" text-anchor="middle" font-size="13" font-weight="600">Understand → Delegate → Verify → Integrate</text>
-  <text class="muted" x="450" y="214" text-anchor="middle" font-size="11">Agent workflows · Runtime verification · Automation</text>
 </svg>
