@@ -1,94 +1,46 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 1,
   "metricScope": "observed-local-codex",
   "timezone": "Asia/Seoul",
   "window": {
-    "from": "2026-08-16",
-    "to": "2026-09-14"
+    "from": "2026-08-19",
+    "to": "2026-09-17"
   },
-  "asOfDate": "2026-09-14",
+  "asOfDate": "2026-09-17",
   "completeThroughDate": null,
   "status": "partial",
-  "aggregation": "lower-bound",
   "summary": {
     "activeDays": 30,
-    "sessionDays": 163,
-    "toolCalls": 11952,
-    "totalTokens": 1489475483,
-    "maxSessionTokens": 295476810,
-    "longestSessionMinutes": 15622,
-    "currentStreakDays": 30,
-    "longestStreakDays": 30
+    "sessionDays": null,
+    "toolCalls": null
   },
   "days": [
     {
-      "date": "2026-08-16",
-      "active": true,
-      "activeSessions": 14,
-      "toolCalls": 685,
-      "tokens": 85605170,
-      "maxSessionTokens": 24394068,
-      "longestSessionMinutes": 1434,
-      "coverage": "partial"
-    },
-    {
-      "date": "2026-08-17",
-      "active": true,
-      "activeSessions": 31,
-      "toolCalls": 2003,
-      "tokens": 259361941,
-      "maxSessionTokens": 31954219,
-      "longestSessionMinutes": 2262,
-      "coverage": "partial"
-    },
-    {
-      "date": "2026-08-18",
+      "date": "2026-08-19",
       "active": true,
       "activeSessions": null,
       "toolCalls": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
-      "coverage": "partial"
-    },
-    {
-      "date": "2026-08-19",
-      "active": true,
-      "activeSessions": 37,
-      "toolCalls": 2573,
-      "tokens": 332151103,
-      "maxSessionTokens": 33930682,
-      "longestSessionMinutes": 6858,
       "coverage": "partial"
     },
     {
       "date": "2026-08-20",
       "active": true,
-      "activeSessions": 15,
-      "toolCalls": 858,
-      "tokens": 117056526,
-      "maxSessionTokens": 39898560,
-      "longestSessionMinutes": 1333,
+      "activeSessions": null,
+      "toolCalls": null,
       "coverage": "partial"
     },
     {
       "date": "2026-08-21",
       "active": true,
-      "activeSessions": 20,
-      "toolCalls": 2148,
-      "tokens": 268625603,
-      "maxSessionTokens": 53067362,
-      "longestSessionMinutes": 12896,
+      "activeSessions": null,
+      "toolCalls": null,
       "coverage": "partial"
     },
     {
       "date": "2026-08-22",
       "active": true,
-      "activeSessions": 15,
-      "toolCalls": 1216,
-      "tokens": 159329863,
-      "maxSessionTokens": 129588293,
-      "longestSessionMinutes": 1692,
+      "activeSessions": null,
+      "toolCalls": null,
       "coverage": "partial"
     },
     {
@@ -96,9 +48,6 @@
       "active": true,
       "activeSessions": null,
       "toolCalls": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
       "coverage": "partial"
     },
     {
@@ -106,9 +55,6 @@
       "active": true,
       "activeSessions": null,
       "toolCalls": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
       "coverage": "partial"
     },
     {
@@ -116,9 +62,6 @@
       "active": true,
       "activeSessions": null,
       "toolCalls": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
       "coverage": "partial"
     },
     {
@@ -126,9 +69,6 @@
       "active": true,
       "activeSessions": null,
       "toolCalls": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
       "coverage": "partial"
     },
     {
@@ -136,9 +76,6 @@
       "active": true,
       "activeSessions": null,
       "toolCalls": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
       "coverage": "partial"
     },
     {
@@ -146,9 +83,6 @@
       "active": true,
       "activeSessions": null,
       "toolCalls": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
       "coverage": "partial"
     },
     {
@@ -156,9 +90,6 @@
       "active": true,
       "activeSessions": null,
       "toolCalls": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
       "coverage": "partial"
     },
     {
@@ -166,9 +97,6 @@
       "active": true,
       "activeSessions": null,
       "toolCalls": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
       "coverage": "partial"
     },
     {
@@ -176,19 +104,13 @@
       "active": true,
       "activeSessions": null,
       "toolCalls": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
       "coverage": "partial"
     },
     {
       "date": "2026-09-01",
       "active": true,
-      "activeSessions": 27,
-      "toolCalls": 1986,
-      "tokens": 223436455,
-      "maxSessionTokens": 256318310,
-      "longestSessionMinutes": 15622,
+      "activeSessions": null,
+      "toolCalls": null,
       "coverage": "partial"
     },
     {
@@ -196,9 +118,6 @@
       "active": true,
       "activeSessions": null,
       "toolCalls": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
       "coverage": "partial"
     },
     {
@@ -206,9 +125,6 @@
       "active": true,
       "activeSessions": null,
       "toolCalls": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
       "coverage": "partial"
     },
     {
@@ -216,19 +132,13 @@
       "active": true,
       "activeSessions": null,
       "toolCalls": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
       "coverage": "partial"
     },
     {
       "date": "2026-09-05",
       "active": true,
-      "activeSessions": 4,
-      "toolCalls": 483,
-      "tokens": 43908822,
-      "maxSessionTokens": 295476810,
-      "longestSessionMinutes": 0,
+      "activeSessions": null,
+      "toolCalls": null,
       "coverage": "partial"
     },
     {
@@ -236,9 +146,6 @@
       "active": true,
       "activeSessions": null,
       "toolCalls": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
       "coverage": "partial"
     },
     {
@@ -246,9 +153,6 @@
       "active": true,
       "activeSessions": null,
       "toolCalls": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
       "coverage": "partial"
     },
     {
@@ -256,9 +160,6 @@
       "active": true,
       "activeSessions": null,
       "toolCalls": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
       "coverage": "partial"
     },
     {
@@ -266,9 +167,6 @@
       "active": true,
       "activeSessions": null,
       "toolCalls": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
       "coverage": "partial"
     },
     {
@@ -276,9 +174,6 @@
       "active": true,
       "activeSessions": null,
       "toolCalls": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
       "coverage": "partial"
     },
     {
@@ -286,9 +181,6 @@
       "active": true,
       "activeSessions": null,
       "toolCalls": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
       "coverage": "partial"
     },
     {
@@ -296,9 +188,6 @@
       "active": true,
       "activeSessions": null,
       "toolCalls": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
       "coverage": "partial"
     },
     {
@@ -306,9 +195,6 @@
       "active": true,
       "activeSessions": null,
       "toolCalls": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
       "coverage": "partial"
     },
     {
@@ -316,9 +202,27 @@
       "active": true,
       "activeSessions": null,
       "toolCalls": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-09-15",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-09-16",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-09-17",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
       "coverage": "partial"
     }
   ]
