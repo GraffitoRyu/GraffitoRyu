@@ -3,10 +3,10 @@
   "metricScope": "observed-local-codex",
   "timezone": "Asia/Seoul",
   "window": {
-    "from": "2026-08-19",
-    "to": "2026-09-17"
+    "from": "2026-08-20",
+    "to": "2026-09-18"
   },
-  "asOfDate": "2026-09-17",
+  "asOfDate": "2026-09-18",
   "completeThroughDate": null,
   "status": "partial",
   "summary": {
@@ -15,13 +15,6 @@
     "toolCalls": null
   },
   "days": [
-    {
-      "date": "2026-08-19",
-      "active": true,
-      "activeSessions": null,
-      "toolCalls": null,
-      "coverage": "partial"
-    },
     {
       "date": "2026-08-20",
       "active": true,
@@ -220,6 +213,13 @@
     },
     {
       "date": "2026-09-17",
+      "active": true,
+      "activeSessions": null,
+      "toolCalls": null,
+      "coverage": "partial"
+    },
+    {
+      "date": "2026-09-18",
       "active": true,
       "activeSessions": null,
       "toolCalls": null,
