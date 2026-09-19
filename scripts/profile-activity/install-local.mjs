@@ -55,13 +55,13 @@ function xml(value) {
   return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 }
 
-function collectorPlist({ label, nodeBinary, cli, configFile }) {
+export function collectorPlist({ label, nodeBinary, cli, configFile }) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>Label</key><string>${xml(label)}</string>
 <key>ProgramArguments</key><array><string>${xml(nodeBinary)}</string><string>${xml(cli)}</string><string>collect</string><string>--config</string><string>${xml(configFile)}</string></array>
-<key>RunAtLoad</key><true/><key>StartInterval</key><integer>1800</integer>
+<key>RunAtLoad</key><true/><key>StartInterval</key><integer>900</integer>
 <key>StandardOutPath</key><string>/dev/null</string><key>StandardErrorPath</key><string>/dev/null</string>
 </dict></plist>
 `;
@@ -85,7 +85,7 @@ async function main() {
       runtimeDigest: digest,
       registration: 'requires explicit apply approval',
       label: role === 'collector' ? 'com.graffitoryu.profile-activity.collector' : 'com.graffitoryu.profile-activity.publisher',
-      schedule: role === 'collector' ? 'login and 30-minute interval candidate' : 'single daily KST run candidate',
+      schedule: role === 'collector' ? 'login and 15-minute interval candidate' : 'single daily KST run candidate',
       publisherIsolation: role === 'publisher' ? 'private global lock and candidate worktree outside source checkout' : null,
       requiredPrivateValues: ['sourceId', 'logRoots', 'stateDir', 'runtimeDir', 'transportDir'],
     }));
@@ -165,7 +165,9 @@ async function main() {
   process.stdout.write(stableJson({ status: 'runtime-installed', runtimeDigest: digest, registration }));
 }
 
-main().catch(() => {
-  process.stderr.write('{"status":"error"}\n');
-  process.exitCode = 1;
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch(() => {
+    process.stderr.write('{"status":"error"}\n');
+    process.exitCode = 1;
+  });
+}

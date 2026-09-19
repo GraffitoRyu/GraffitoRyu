@@ -9,6 +9,7 @@ import { promisify } from 'node:util';
 import { aggregateSnapshots } from '../../scripts/profile-activity/aggregate.mjs';
 import { collectLogRoots, probeLogRoots } from '../../scripts/profile-activity/collect.mjs';
 import { parsePrivateSnapshot, parsePublicActivity, stableJson } from '../../scripts/profile-activity/contract.mjs';
+import { collectorPlist } from '../../scripts/profile-activity/install-local.mjs';
 import { assertAllowedPaths, publishGenerated, verifyRuntimeManifest, withPublisherLock } from '../../scripts/profile-activity/publish.mjs';
 import { publicationDecision, publicationReceipt, publishIfReady } from '../../scripts/profile-activity/publication-gate.mjs';
 import { acceptAcknowledgement, createEnvelope, nextDelivery, parseEnvelope, receiveEnvelope } from '../../scripts/profile-activity/relay.mjs';
@@ -229,6 +230,14 @@ test('T57 receive-triggered and 08:00 gates publish at most once', async () => {
   assert.equal(results.filter(({ status }) => status === 'published').length, 1);
   assert.ok(results.every(({ status }) => ['published', 'skipped-lock', 'already-published'].includes(status)));
   assert.equal(publishes, 1);
+});
+
+test('T58 collector plist runs at login and every 15 minutes without wake controls', async () => {
+  const root = await temp();
+  const plist = collectorPlist({ label: 'com.graffitoryu.profile-activity.collector', nodeBinary: process.execPath, cli: path.join(root, 'runtime', 'cli.mjs'), configFile: path.join(root, 'state', 'installed-config.json') });
+  assert.match(plist, /<key>RunAtLoad<\/key><true\/>/);
+  assert.match(plist, /<key>StartInterval<\/key><integer>900<\/integer>/);
+  assert.doesNotMatch(plist, /KeepAlive|NetworkState|PreventSystemSleep/);
 });
 
 test('T01 duplicate raw/archive copies do not increase counts', async () => {

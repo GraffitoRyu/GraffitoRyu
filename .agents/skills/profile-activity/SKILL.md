@@ -5,6 +5,7 @@ description: Refresh verified local Codex activity metrics with the pinned priva
 
 # Profile activity refresh
 
-1. Run the installed runtime's `cli.mjs run --config <installed-config>` command only.
-2. Treat `published` and `no-op` as success and `skipped-lock` as a safe skip. A verified `partial` result may publish; `unavailable` must preserve the last public result.
-3. Stop on digest, schema, source, repository, branch, remote, hook, allowlist, or permission errors. Do not inspect raw JSONL, modify config, widen access, update the runtime, or retry beyond the runtime's bounded policy.
+1. Use the installed runtime only: collector `outbox` and `acknowledge`; publisher `receive` and gated `run`.
+2. Pass only schema-validated sanitized envelopes between the fixed tasks. Never inspect or summarize the snapshot body.
+3. Treat `published`, `no-op`, `already-published`, and `acknowledged` as success; `before-window`, `awaiting-source`, and `skipped-lock` as safe skips.
+4. Stop on validation, retry exhaustion, runtime, repository, remote, hook, allowlist, or permission errors. Preserve last-good and the last public result.
