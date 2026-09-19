@@ -85,7 +85,7 @@ async function main() {
       runtimeDigest: digest,
       registration: 'requires explicit apply approval',
       label: role === 'collector' ? 'com.graffitoryu.profile-activity.collector' : 'com.graffitoryu.profile-activity.publisher',
-      schedule: role === 'collector' ? 'login and 15-minute interval candidate' : 'single daily KST run candidate',
+      schedule: role === 'collector' ? 'login and 15-minute interval candidate' : 'separate local collection and later processing candidates',
       publisherIsolation: role === 'publisher' ? 'private global lock and candidate worktree outside source checkout' : null,
       requiredPrivateValues: ['sourceId', 'logRoots', 'stateDir', 'runtimeDir', 'transportDir'],
     }));

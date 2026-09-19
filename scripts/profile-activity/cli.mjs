@@ -136,35 +136,11 @@ async function collect(config, asOfDate, dryRun) {
   } };
 }
 
-async function aggregate(config, selfSnapshot, asOfDate, persistLastGood) {
+async function publisherSnapshots(config) {
   const snapshots = [];
   for (const source of config.expectedSources) {
-    if (source.sourceId === config.sourceId && selfSnapshot) snapshots.push(selfSnapshot);
-    else {
-      const scope = source.location === 'local' ? config.stateDir : config.transportDir;
-      const cacheFile = path.join(config.stateDir, `last-good-${source.sourceId}.json`);
-      let lastGood = null;
-      try { lastGood = await readSnapshot(cacheFile, config.stateDir); } catch {}
-      try {
-        const incoming = await readSnapshot(source.file, scope);
-        if (lastGood && (incoming.revision < lastGood.revision || (incoming.revision === lastGood.revision && stableJson(incoming) !== stableJson(lastGood)))) snapshots.push(lastGood);
-        else {
-          snapshots.push(incoming);
-          if (persistLastGood) await atomicWrite(cacheFile, incoming, config.stateDir);
-        }
-      } catch {
-        if (lastGood) snapshots.push(lastGood);
-      }
-    }
-  }
-  return aggregateSnapshots(snapshots, { asOfDate, referenceTime: new Date().toISOString(), expectedSourceIds: config.expectedSources.map(({ sourceId }) => sourceId), independentSources: config.independentSources, staleAfterHours: config.staleAfterHours });
-}
-
-async function publisherSnapshots(config, selfSnapshot) {
-  const snapshots = [];
-  for (const source of config.expectedSources) {
-    if (source.sourceId === config.sourceId && selfSnapshot) {
-      snapshots.push(selfSnapshot);
+    if (source.sourceId === config.sourceId) {
+      try { snapshots.push(await readSnapshot(path.join(config.stateDir, 'snapshot.json'), config.stateDir)); } catch {}
       continue;
     }
     const cacheFile = path.join(config.stateDir, `last-good-${source.sourceId}.json`);
@@ -231,11 +207,10 @@ async function main() {
     process.stdout.write(stableJson(result));
     return;
   }
-  if (args.command === 'run' && !args.dryRun) stateChanged = 'unknown';
-  const collected = args.command === 'run' ? await collect(config, asOfDate, args.dryRun) : { snapshot: null };
-  if (args.command === 'run' && !args.dryRun) stateChanged = true;
+  const now = new Date().toISOString();
+  const snapshots = await publisherSnapshots(config);
   if (args.dryRun) {
-    const activity = await aggregate(config, collected.snapshot, asOfDate, false);
+    const activity = aggregateSnapshots(snapshots, { asOfDate, referenceTime: now, expectedSourceIds: config.expectedSources.map(({ sourceId }) => sourceId), independentSources: config.independentSources, staleAfterHours: config.staleAfterHours });
     const generated = { 'metrics/codex-activity.json': stableJson(activity), 'assets/codex-activity.svg': renderActivitySvg(activity) };
     await publishGenerated(config, generated, { dryRun: true });
     stateChanged = 'unknown';
@@ -245,8 +220,6 @@ async function main() {
     process.stdout.write(stableJson({ status: 'dry-run', aggregateStatus: activity.status }));
     return;
   }
-  const now = new Date().toISOString();
-  const snapshots = await publisherSnapshots(config, collected.snapshot);
   if (stateChanged === false) stateChanged = 'unknown';
   const result = await publishIfReady({
     config,

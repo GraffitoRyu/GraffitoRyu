@@ -350,13 +350,22 @@ test('T69 invocation uses receipt-pinned Node and accepts bounded large stdout',
   assert.equal(deliveryExecution.createInstalledCliInvocation({ receiptFile: fixture.receiptFile, command: 'run' }).run().status, 'no-op');
 });
 
-test('T70 multi-write run failure reports state change as unknown', async () => {
+test('T70 multi-write collection failure reports state change as unknown', async () => {
   const fixture = await installedPublisherFixture();
   await mkdir(path.join(fixture.stateDir, 'snapshot.json'));
-  await assert.rejects(run(process.execPath, [fixture.cli, 'run', '--config', fixture.config]), (error) => {
+  await assert.rejects(run(process.execPath, [fixture.cli, 'collect', '--config', fixture.config]), (error) => {
     assert.equal(JSON.parse(error.stderr).stateChanged, 'unknown');
     return true;
   });
+});
+
+test('T71 publisher run processes stored device snapshots without collecting either scope', async () => {
+  const fixture = await installedPublisherFixture();
+  const local = insightSnapshot({ sourceId: SOURCE_B, revision: 5 });
+  await writeFile(path.join(fixture.stateDir, 'snapshot.json'), stableJson(local));
+  const result = JSON.parse((await run(process.execPath, [fixture.cli, 'run', '--config', fixture.config, '--as-of', '2026-09-13'])).stdout);
+  assert.equal(result.status, 'awaiting-source');
+  assert.equal((await readSnapshot(path.join(fixture.stateDir, 'snapshot.json'), fixture.stateDir)).revision, 5);
 });
 
 test('T57 receive-triggered and 08:00 gates publish at most once', async () => {
