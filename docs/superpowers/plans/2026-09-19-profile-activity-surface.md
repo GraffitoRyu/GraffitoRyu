@@ -1,209 +1,177 @@
-# Anonymous 30-Day Profile Activity Surface Implementation Plan
+# Direct Device Collections Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add privacy-preserving private snapshot schema v3 and publish an anonymous enriched 30-day activity surface only after two current v3 device snapshots are available.
+**Goal:** Let MacBook and Mac mini publish separate anonymous 30-day collection files directly to the repository and merge them only when rendering the public activity surface.
 
-**Architecture:** Keep collection device-local and reduce structured records to fixed counters before persistence. Extend the existing strict contracts, processing-only aggregator, envelope, publication gate, and static renderer without changing runtime installation or operating state. Keep account usage in a separate exact private contract and combine it only in an in-memory processing result, never in the public activity object.
+**Architecture:** Each installed collector keeps raw parsing and private cache local, writes only its fixed sanitized repository collection, then renders from the latest two collection files. The active workflow has no envelope, receive, acknowledgement, or cross-device payload; Git serialization and non-overlapping schedules coordinate the two independent publishers.
 
-**Tech Stack:** Node.js ESM, Node standard library, `node:test`
+**Tech Stack:** Node.js ESM, Node standard library, `node:test`, Git
 
 **Spec:** `docs/superpowers/specs/2026-09-19-profile-activity-surface-design.md`
 
 ## Global Constraints
 
-- Preserve the collector -> private snapshot -> relay -> processing-only merge -> public schema -> static renderer boundary.
-- Snapshot v3 contains exactly the latest 30 contiguous KST dates; v2 remains readable.
-- Persist no prompt, response, arguments, session/source/device/account identity, plugin/skill/model name, path, credential, balance, plan, reset-credit metadata, raw native response, or raw JSONL.
-- Do not infer skill, mode, or reasoning values from prompt text, paths, commands, or arguments; absent explicit structured events remain `null`.
-- Add no dependency, framework, package-manager operation, installation, automation change, delivery operation, publication, generated artifact update, README change, or push.
-- Preserve the last public result for missing, stale, mixed-schema, malformed, and conflicting inputs.
+- MacBook writes only `metrics/codex-activity-macbook.json`; Mac mini writes only `metrics/codex-activity-macmini.json`.
+- Collection bodies contain schema v3 anonymous aggregate fields only; the filename binds the slot.
+- Only visualization reads both collection files; neither device reads the other device's logs or private state.
+- The merged output remains `metrics/codex-activity.json` and `assets/codex-activity.svg`.
+- Missing, stale, malformed, or mixed-schema collections preserve the previous merged output.
+- Raw JSONL is parsed only by the installed runtime and never enters model output, repository files, or diagnostics.
+- No new dependency, framework, database, shared folder, force push, or direct push to `origin/main`.
+- README is not changed.
 
 ## Review Focus
 
-- A malformed optional structured event must make only its optional metric unavailable while preserving core activity counts; Task 1 tests this.
-- A session first seen before the 30-day window must not count as a new chat inside the window; Task 1 tests this.
-- An explicit plugin identity or tool name must be reduced to fixed counters and never survive serialized cache, snapshot, envelope, diagnostics, or public output; Tasks 1 and 3 test this.
-- One unavailable optional metric on either source must make the merged metric `null`, not zero or a partial total; Task 2 tests this.
-- A stale v3 pair or mixed v2/v3 pair must not pass the publication gate; Task 3 tests this.
+- A device must be unable to write the other slot, even with a forged command argument; Task 1 tests fixed config-to-path binding.
+- A valid current collection must be committed even when the peer collection is unavailable, while merged output remains byte-identical; Task 2 tests this split outcome.
+- A non-fast-forward retry must re-read both remote collections and rerender without recollecting; Task 2 tests call counts and final bytes.
+- Collection files must reject source/device IDs, digests, names, paths, and extra keys; Task 1 tests private canaries and exact keys.
+- Account usage must be sampled by the designated final renderer only and never enter either device collection; Task 2 tests collection bytes and processing inputs.
 
 ---
 
-### Task 1: Private v3 contract and device-local collection
+### Task 1: Repository collection contract and fixed slots
 
 **Files:**
+- Create: `scripts/profile-activity/collection.mjs`
+- Modify: `scripts/profile-activity/config.mjs`
 - Modify: `scripts/profile-activity/contract.mjs`
-- Modify: `scripts/profile-activity/collect.mjs`
-- Modify: `scripts/profile-activity/cli.mjs`
 - Modify: `tests/profile-activity/fixtures.mjs`
 - Modify: `tests/profile-activity/profile-activity.test.mjs`
 
 **Interfaces:**
-- Consumes: existing mechanical JSONL scan and v1/v2 `parsePrivateSnapshot(value)` behavior.
-- Produces: v3 `parsePrivateSnapshot(value)`, 30-day `collectLogRoots(...).days`, and v3 collector snapshots with anonymous daily counters only.
+- Consumes: `parsePrivateSnapshot(value)` schema v3 output and installed config role/slot.
+- Produces: `parseRepositoryCollection(value)`, `collectionPath(slot)`, and `createRepositoryCollection(snapshot)`.
 
-- [ ] **Step 1: Write failing v3 contract tests**
+- [ ] **Step 1: Write failing exact-contract tests**
 
-Add literal v3 fixtures and tests that require exactly 30 contiguous KST dates, exact daily keys, fixed reasoning keys, denominator equality, non-negative safe integers, and rejection of extra or identifying keys.
+Add tests constructing a schema v3 snapshot and asserting:
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+```js
+assert.deepEqual(createRepositoryCollection(snapshot), parseRepositoryCollection(snapshot));
+assert.equal(collectionPath('macbook'), 'metrics/codex-activity-macbook.json');
+assert.equal(collectionPath('macmini'), 'metrics/codex-activity-macmini.json');
+assert.throws(() => collectionPath('../peer'), /invalid collection slot/);
+```
 
-Run: `node --test --test-name-pattern='v3 schema' tests/profile-activity/profile-activity.test.mjs`
+Reject bodies containing `sourceId`, `deviceId`, `digest`, plugin/skill names, paths, or any extra key.
 
-Expected: FAIL because schema v3 is unsupported.
+- [ ] **Step 2: Verify RED**
 
-- [ ] **Step 3: Implement the minimum strict v3 parser**
+Run: `node --test --test-name-pattern='repository collection' tests/profile-activity/profile-activity.test.mjs`
 
-Add schema-specific exact daily keys for `newChats`, `pluginCalls`, `browserCalls`, `computerUseCalls`, `otherToolCalls`, `skillUses`, `fastTurns`, `modeTurns`, `reasoningTurns`, and fixed `reasoning` categories. Require `window.from + 29 days === window.to` only for v3 and retain v1/v2 parsing unchanged.
+Expected: FAIL because `collection.mjs` and slot validation do not exist.
 
-- [ ] **Step 4: Run the focused tests and verify GREEN**
+- [ ] **Step 3: Implement the minimum contract**
 
-Run: `node --test --test-name-pattern='v3 schema' tests/profile-activity/profile-activity.test.mjs`
+Implement fixed `macbook` and `macmini` path mapping, reuse `parsePrivateSnapshot` for the anonymous schema v3 body, and extend installed config with one exact `collectionSlot` enum. Do not serialize the slot into the collection body.
+
+- [ ] **Step 4: Verify GREEN and regression suite**
+
+Run: `node --test --test-name-pattern='repository collection' tests/profile-activity/profile-activity.test.mjs`
 
 Expected: PASS.
-
-- [ ] **Step 5: Write failing collector privacy and structured-event tests**
-
-Add synthetic records for two logical sessions, calls with explicit plugin identity, web/browser, computer-use, and other tools, plus explicit skill-use, Fast mode, and reasoning events. Assert unique/new chats without session identifiers; fixed counters without names; `null` optional metrics when events are absent; and optional-only unavailability for malformed structured events.
-
-- [ ] **Step 6: Run the collector tests and verify RED**
-
-Run: `node --test --test-name-pattern='v3 collector' tests/profile-activity/profile-activity.test.mjs`
-
-Expected: FAIL because v3 counters and optional event handling do not exist.
-
-- [ ] **Step 7: Implement anonymous collection and v3 CLI snapshots**
-
-Extend cache events only with fixed categories and numeric facts, discard input identities after classification, calculate new chats from in-memory session sets, and use `publicDays` to create exactly 30-day schema v3 snapshots. Keep `run` processing-only.
-
-- [ ] **Step 8: Run focused and full tests**
 
 Run: `node --test tests/profile-activity/*.test.mjs`
 
 Expected: all tests PASS.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 5: Commit**
 
 ```sh
-git add scripts/profile-activity/contract.mjs scripts/profile-activity/collect.mjs scripts/profile-activity/cli.mjs tests/profile-activity/fixtures.mjs tests/profile-activity/profile-activity.test.mjs
-git commit -m "Profile Activity v3 수집 계약 추가"
+git add scripts/profile-activity/collection.mjs scripts/profile-activity/config.mjs scripts/profile-activity/contract.mjs tests/profile-activity/fixtures.mjs tests/profile-activity/profile-activity.test.mjs
+git commit -m "장비별 익명 collection 계약 추가"
 ```
 
-### Task 2: Two-source v3 aggregation and public surface
+### Task 2: Direct repository publication and visualization-only merge
 
 **Files:**
-- Modify: `scripts/profile-activity/contract.mjs`
+- Modify: `scripts/profile-activity/cli.mjs`
+- Modify: `scripts/profile-activity/publish.mjs`
+- Modify: `scripts/profile-activity/publication-gate.mjs`
 - Modify: `scripts/profile-activity/aggregate.mjs`
 - Modify: `scripts/profile-activity/render.mjs`
-- Modify: `tests/profile-activity/fixtures.mjs`
+- Delete: `scripts/profile-activity/relay.mjs`
+- Modify: `scripts/profile-activity/delivery-execution.mjs`
 - Modify: `tests/profile-activity/profile-activity.test.mjs`
 
 **Interfaces:**
-- Consumes: two parsed v3 snapshots from Task 1.
-- Produces: public schema v3 with anonymous daily/summary counters, weighted Fast/reasoning percentages, streaks, and deterministic static SVG rendering.
+- Consumes: local schema v3 snapshot, fixed collection slot, latest repository worktree, optional exact account sample.
+- Produces: `publishCollection(config, collection, options)` that stages the local slot and conditionally stages merged JSON/SVG.
 
-- [ ] **Step 1: Write failing merge tests**
+- [ ] **Step 1: Write failing direct-publication tests**
 
-Add two literal v3 snapshots with unequal denominators. Assert additive sums only when both values are known, maximum token/span values, numerator/denominator weighted percentages, fixed reasoning percentages, unique/new chat totals, streaks, and `null` propagation from either source.
+Add synthetic Git repository tests proving:
 
-- [ ] **Step 2: Run merge tests and verify RED**
+```js
+assert.deepEqual(stagedPaths, [ownCollectionPath, 'assets/codex-activity.svg', 'metrics/codex-activity.json'].sort());
+assert.equal(collectCalls, 1);
+assert.equal(peerCollectionWrites, 0);
+```
 
-Run: `node --test --test-name-pattern='v3 aggregate' tests/profile-activity/profile-activity.test.mjs`
+When the peer is missing/stale/malformed, assert only the own collection is staged and existing merged output bytes stay unchanged. On a synthetic non-fast-forward, assert the retry fetches latest collections, rerenders, and does not invoke collection again.
 
-Expected: FAIL because the aggregator emits only public schema v1/v2.
+- [ ] **Step 2: Verify RED**
 
-- [ ] **Step 3: Implement public v3 contract and aggregation**
+Run: `node --test --test-name-pattern='direct collection publication' tests/profile-activity/profile-activity.test.mjs`
 
-Extend `parsePublicActivity` with exact schema v3 keys. Aggregate additive counters by sum, maxima by maximum, optional metrics only with two known sources, and percentages from summed numerators and denominators. Preserve v1/v2 behavior.
+Expected: FAIL because publication accepts only the old generated-file pair and reads private/transport snapshots.
 
-- [ ] **Step 4: Run merge tests and verify GREEN**
+- [ ] **Step 3: Implement direct publication**
 
-Run: `node --test --test-name-pattern='v3 aggregate' tests/profile-activity/profile-activity.test.mjs`
+Add one installed command that collects the local scope once, creates the own repository collection, publishes that file, reads both repository collection files, and generates merged JSON/SVG only when both validate as current v3. Generalize the allowlist to the invoking slot plus the existing merged pair. Reuse the existing bounded non-fast-forward retry, but rerender from refreshed repository bytes without recollecting.
+
+- [ ] **Step 4: Remove relay from the active CLI path**
+
+Remove `outbox`, `receive`, `acknowledge`, envelope parsing, and `receive-run` from the installed runtime and active CLI. Delete `relay.mjs`; no active command may use delivery state as publication input.
+
+- [ ] **Step 5: Verify GREEN and privacy**
+
+Run: `node --test --test-name-pattern='direct collection publication' tests/profile-activity/profile-activity.test.mjs`
 
 Expected: PASS.
 
-- [ ] **Step 5: Write failing renderer privacy tests**
+Run: `node --test --test-name-pattern='canary|privacy|renderer|aggregate' tests/profile-activity/profile-activity.test.mjs`
 
-Assert deterministic schema v3 SVG output includes the anonymous enriched metrics and fixed reasoning labels, but contains no source split, plugin/skill identity, canary, active content, or external reference.
+Expected: PASS with no canary in collection or merged bytes.
 
-- [ ] **Step 6: Run renderer tests and verify RED**
-
-Run: `node --test --test-name-pattern='v3 renderer' tests/profile-activity/profile-activity.test.mjs`
-
-Expected: FAIL because schema v3 rendering does not exist.
-
-- [ ] **Step 7: Implement the minimum static v3 renderer**
-
-Reuse existing escaping and number formatting, render only fixed labels and aggregate values, and keep v1/v2 rendering unchanged.
-
-- [ ] **Step 8: Run full tests**
-
-Run: `node --test tests/profile-activity/*.test.mjs`
-
-Expected: all tests PASS.
-
-- [ ] **Step 9: Commit**
+- [ ] **Step 6: Commit**
 
 ```sh
-git add scripts/profile-activity/contract.mjs scripts/profile-activity/aggregate.mjs scripts/profile-activity/render.mjs tests/profile-activity/fixtures.mjs tests/profile-activity/profile-activity.test.mjs
-git commit -m "두 장비 익명 activity surface 병합 추가"
+git add scripts/profile-activity/cli.mjs scripts/profile-activity/publish.mjs scripts/profile-activity/publication-gate.mjs scripts/profile-activity/aggregate.mjs scripts/profile-activity/render.mjs scripts/profile-activity/delivery-execution.mjs scripts/profile-activity/relay.mjs tests/profile-activity/profile-activity.test.mjs
+git commit -m "장비별 collection 직접 게시 전환"
 ```
 
-### Task 3: Account sanitization, v3 relay gate, preservation, and documentation
+### Task 3: Installation, schedules, documentation, and rollout validation
 
 **Files:**
-- Create: `scripts/profile-activity/account-usage.mjs`
-- Modify: `scripts/profile-activity/relay.mjs`
-- Modify: `scripts/profile-activity/publication-gate.mjs`
-- Modify: `scripts/profile-activity/cli.mjs`
+- Modify: `scripts/profile-activity/install-local.mjs`
+- Modify: `scripts/profile-activity/plist.mjs`
 - Modify: `.agents/skills/profile-activity/SKILL.md`
 - Modify: `docs/profile-activity.md`
 - Modify: `tests/profile-activity/profile-activity.test.mjs`
-- Add: `docs/superpowers/plans/2026-09-19-profile-activity-surface.md`
+- Modify: `docs/superpowers/plans/2026-09-19-profile-activity-surface.md`
 
 **Interfaces:**
-- Consumes: strict v2/v3 private snapshots, existing delivery state, and one exact private account sample.
-- Produces: version-matched v2/v3 envelopes, a v3-only enriched publication gate, and `processActivitySurface(snapshots, options, accountUsage)` returning `{ activity, accountUsage }` without placing account usage in public output.
+- Consumes: Task 2 direct publication command and per-device `collectionSlot` config.
+- Produces: receipt-pinned installed entrypoint and non-overlapping device schedules with no relay task dependency.
 
-- [ ] **Step 1: Write failing account sanitizer tests**
+- [ ] **Step 1: Write failing installer and schedule tests**
 
-Test exact accepted keys for observation time, window duration, used percentage, reset time, rate-limit state, credit available/unlimited flags, and coverage. Reject account ID, balance, plan, reset-credit metadata, raw response, extra keys, invalid percentages, and inconsistent credit flags. Assert pre-first-sample history is represented as `null` by absence of a sample.
+Assert generated installed config binds exactly one slot, collector plist invokes the direct publication command, no program arguments name `outbox`, `receive`, or `acknowledge`, and the two approved schedules do not overlap.
 
-- [ ] **Step 2: Run sanitizer tests and verify RED**
+- [ ] **Step 2: Verify RED**
 
-Run: `node --test --test-name-pattern='account usage' tests/profile-activity/profile-activity.test.mjs`
+Run: `node --test --test-name-pattern='direct collection install|non-overlapping direct schedules' tests/profile-activity/profile-activity.test.mjs`
 
-Expected: FAIL because `account-usage.mjs` does not exist.
+Expected: FAIL because installation still provisions the relay-era commands and schedule.
 
-- [ ] **Step 3: Implement exact account sanitization and one-time processing join**
+- [ ] **Step 3: Implement installation and documentation updates**
 
-Create `parseAccountUsage(value)` and `processActivitySurface(snapshots, options, accountUsage = null)`. Parse the account sample once after `aggregateSnapshots`; return it beside, never inside, the public activity object.
+Generate the direct publication entrypoint from installed config, retain digest verification and exact allowlists, document the two collection files and visualization-only merge, and remove relay/ACK instructions from the active operator workflow.
 
-- [ ] **Step 4: Run sanitizer tests and verify GREEN**
-
-Run: `node --test --test-name-pattern='account usage' tests/profile-activity/profile-activity.test.mjs`
-
-Expected: PASS.
-
-- [ ] **Step 5: Write failing relay/gate/preservation tests**
-
-Test v2 and v3 envelopes, rejection of envelope schema mismatch, v2-only legacy publication, v3-only enriched publication, mixed-schema/missing/stale/conflict/malformed preservation, processing-only merge, and canary absence across snapshot/envelope/diagnostic/public serialization.
-
-- [ ] **Step 6: Run relay/gate tests and verify RED**
-
-Run: `node --test --test-name-pattern='v3 (envelope|publication|preservation|processing)' tests/profile-activity/profile-activity.test.mjs`
-
-Expected: FAIL because relay and gate accept only v2.
-
-- [ ] **Step 7: Implement version-matched relay and publication decisions**
-
-Use version-specific envelope schema labels, require both selected sources to share schema v2 or v3, reject stale/future/current-window failures before publication, and keep `run` limited to stored snapshots.
-
-- [ ] **Step 8: Update operator-facing source documentation**
-
-Document schema v3 privacy, 30-day metrics, separate account scope, v2 migration behavior, processing-only merge, and the rule that installation and operational validation remain separate approvals.
-
-- [ ] **Step 9: Run required verification**
+- [ ] **Step 4: Run full verification**
 
 Run: `node --test tests/profile-activity/*.test.mjs`
 
@@ -213,13 +181,44 @@ Run: `git diff --check`
 
 Expected: exit 0 with no output.
 
-Run: `git status --short`
+Run: `git diff --name-only HEAD -- README.md`
 
-Expected: no changes to `README.md`, `metrics/codex-activity.json`, or `assets/codex-activity.svg`.
+Expected: no output.
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 5: Commit and review**
 
 ```sh
-git add scripts/profile-activity/account-usage.mjs scripts/profile-activity/relay.mjs scripts/profile-activity/publication-gate.mjs scripts/profile-activity/cli.mjs .agents/skills/profile-activity/SKILL.md docs/profile-activity.md docs/superpowers/plans/2026-09-19-profile-activity-surface.md tests/profile-activity/profile-activity.test.mjs
-git commit -m "Profile Activity v3 게시 보호 조건 반영"
+git add scripts/profile-activity/install-local.mjs scripts/profile-activity/plist.mjs .agents/skills/profile-activity/SKILL.md docs/profile-activity.md docs/superpowers/plans/2026-09-19-profile-activity-surface.md tests/profile-activity/profile-activity.test.mjs
+git commit -m "장비별 direct collection 운영 경로 반영"
 ```
+
+Run a fresh whole-branch review against the spec. Fix every Critical or Important finding with RED-to-GREEN coverage, then rerun the full suite.
+
+### Task 4: Push and deploy
+
+**Files:**
+- No source files; operates only on verified Git refs, installed runtime, private config, owned schedules, and generated publication files.
+
+**Interfaces:**
+- Consumes: reviewed clean branch HEAD and two existing private device configs.
+- Produces: remote feature branch, digest-verified runtimes on both devices, non-overlapping direct schedules, and one verified direct update per device.
+
+- [ ] **Step 1: Push the reviewed feature branch**
+
+Verify the upstream is `origin/fix/profile-activity-delivery-ack`, then push `HEAD:refs/heads/fix/profile-activity-delivery-ack`. Never push this branch to `origin/main` and never force-push.
+
+- [ ] **Step 2: Install the exact approved commit on each device**
+
+Use each device's existing private config, adding only its fixed `collectionSlot`. Install through `install-local.mjs --apply` from the exact full commit and verify the installation receipt and runtime manifest digest before execution.
+
+- [ ] **Step 3: Apply non-overlapping schedules**
+
+Preserve existing schedule times when already distinct. If they overlap, move only the MacBook direct publication one existing interval earlier than Mac mini; verify both owned jobs and do not modify unrelated LaunchAgents or automations.
+
+- [ ] **Step 4: Run one direct update per device in schedule order**
+
+Run MacBook once, verify only its collection path changed, then run Mac mini once, verify only its collection plus the merged pair changed. Do not run relay, outbox, receive, or acknowledgement commands.
+
+- [ ] **Step 5: Verify deployment**
+
+Verify both collection files are current valid schema v3 anonymous aggregates, merged JSON/SVG parse and render deterministically, privacy canaries and forbidden keys are absent, README is unchanged, installed manifests match, schedules are non-overlapping, and the remote repository contains the expected publication commits.
