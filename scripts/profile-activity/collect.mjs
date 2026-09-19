@@ -6,7 +6,8 @@ import readline from 'node:readline';
 import { addDays } from './contract.mjs';
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024;
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 3;
+const REASONING_CATEGORIES = new Set(['none', 'low', 'medium', 'high', 'xhigh']);
 
 function typeOf(value) {
   return value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
@@ -56,13 +57,21 @@ async function boundaryHash(file, offset) {
   }
 }
 
+function toolCategory(payload, itemType) {
+  if (typeof payload.plugin_id === 'string' || typeof payload.plugin_name === 'string') return 'plugin';
+  const name = typeof payload.name === 'string' ? payload.name.toLowerCase() : '';
+  if (itemType === 'web_search_call' || /^(?:browser|web)(?:_|$)/.test(name)) return 'browser';
+  if (/^(?:computer|computer_use)(?:_|$)/.test(name)) return 'computer';
+  return 'other';
+}
+
 async function scanFile(file, previous = undefined) {
   // ponytail: a 4 KiB boundary fingerprint avoids rescanning large unchanged files; use a full rolling digest if adversarial in-place rewrites become a real input.
   const boundaryMatches = previous?.boundaryHash === await boundaryHash(file.path, previous?.offset ?? 0);
   const append = previous?.cacheVersion === CACHE_VERSION && previous.offset <= file.size && boundaryMatches && (previous.offset < file.size || previous.mtimeMs === file.mtimeMs);
   const state = append
-    ? { ...previous, events: [...previous.events], unknownDates: [...(previous.unknownDates ?? [])] }
-    : { cacheVersion: CACHE_VERSION, offset: 0, sessionId: null, excluded: false, events: [], unknownDates: [], partial: false, historyStartOrdinal: null, unknownInheritance: false, forked: false, tokenBaseline: null, excludedRoots: previous?.excludedRoots ?? [] };
+    ? { ...previous, events: [...previous.events], unknownDates: [...(previous.unknownDates ?? [])], optionalKinds: [...(previous.optionalKinds ?? [])], optionalUnknownDates: [...(previous.optionalUnknownDates ?? [])] }
+    : { cacheVersion: CACHE_VERSION, offset: 0, sessionId: null, excluded: false, events: [], unknownDates: [], optionalKinds: [], optionalUnknownDates: [], partial: false, historyStartOrdinal: null, unknownInheritance: false, forked: false, tokenBaseline: null, excludedRoots: previous?.excludedRoots ?? [] };
   if (state.offset === file.size) return state;
   const stream = createReadStream(file.path, { start: state.offset, end: file.size - 1, encoding: 'utf8' });
   const lines = readline.createInterface({ input: stream, crlfDelay: Infinity });
@@ -130,6 +139,32 @@ async function scanFile(file, previous = undefined) {
       state.events.push({ date, timestamp: record.timestamp, sessionId: state.sessionId, kind: 'tokens', callId: null, hash, sessionTotal });
       continue;
     }
+    if (record.type === 'event_msg' && ['skill_use', 'mode', 'reasoning'].includes(payload?.type)) {
+      const optionalKind = payload.type === 'skill_use' ? 'skill' : payload.type;
+      if (!state.optionalKinds.includes(optionalKind)) state.optionalKinds.push(optionalKind);
+      const date = kstDate(record.timestamp);
+      const valid = date && state.sessionId && !state.excluded
+        && (optionalKind === 'skill' ? typeof (payload.skill_name ?? payload.skill) === 'string'
+          : optionalKind === 'mode' ? typeof payload.mode === 'string'
+            : typeof payload.effort === 'string');
+      if (!valid) {
+        if (date) state.optionalUnknownDates.push(`${date}\0${optionalKind}`);
+        continue;
+      }
+      const stableId = Number.isSafeInteger(record.ordinal) ? record.ordinal : record.timestamp;
+      const hash = createHash('sha256').update(`${state.sessionId}\0${optionalKind}\0${stableId}`).digest('hex');
+      state.events.push({
+        date,
+        timestamp: record.timestamp,
+        sessionId: state.sessionId,
+        kind: optionalKind,
+        callId: null,
+        hash,
+        ...(optionalKind === 'mode' && { fast: payload.mode.toLowerCase() === 'fast' }),
+        ...(optionalKind === 'reasoning' && { category: REASONING_CATEGORIES.has(payload.effort.toLowerCase()) ? payload.effort.toLowerCase() : 'other' }),
+      });
+      continue;
+    }
     if (record.type !== 'response_item' || !payload || typeof payload !== 'object') continue;
     if (payload.inherited === true) continue;
     if (payload.provenance !== undefined && !['local', 'new'].includes(payload.provenance)) {
@@ -158,7 +193,7 @@ async function scanFile(file, previous = undefined) {
     }
     const stableId = typeof payload.id === 'string' ? payload.id : line;
     const hash = createHash('sha256').update(`${state.sessionId}\0${stableId}`).digest('hex');
-    state.events.push({ date, timestamp: record.timestamp, sessionId: state.sessionId, kind: eligibleCall ? 'tool' : 'activity', callId, hash });
+    state.events.push({ date, timestamp: record.timestamp, sessionId: state.sessionId, kind: eligibleCall ? 'tool' : 'activity', callId, hash, ...(eligibleCall && { category: toolCategory(payload, itemType) }) });
   }
   state.offset = lastCompleteOffset;
   state.boundaryHash = await boundaryHash(file.path, state.offset);
@@ -234,14 +269,28 @@ export async function collectLogRoots({ logRoots, excludedRepoRoots = [], from, 
   const eventHashes = new Set();
   const sessionDays = new Set();
   const callDays = new Set();
+  const toolCategories = new Map();
   const tokenEvents = [];
   const sessionBounds = new Map();
+  const firstActivityBySession = new Map();
   const unknownDates = new Set();
+  const optionalKinds = new Set();
+  const optionalUnknownDates = new Set();
+  const skillUsesByDate = new Map();
+  const fastTurnsByDate = new Map();
+  const modeTurnsByDate = new Map();
+  const reasoningByDate = new Map();
   let partial = false;
   for (const state of Object.values(nextCache.files)) {
     partial ||= state.partial;
+    for (const kind of state.optionalKinds ?? []) optionalKinds.add(kind);
+    for (const key of state.optionalUnknownDates ?? []) optionalUnknownDates.add(key);
     for (const date of state.unknownDates ?? []) if (date >= from && date <= to) unknownDates.add(date);
     for (const event of state.events) {
+      if (event.kind !== 'meta') {
+        const first = firstActivityBySession.get(event.sessionId);
+        if (!first || event.date < first) firstActivityBySession.set(event.sessionId, event.date);
+      }
       if (event.date < from || event.date > to || eventHashes.has(event.hash)) continue;
       eventHashes.add(event.hash);
       if (typeof event.timestamp === 'string' && !Number.isNaN(Date.parse(event.timestamp))) {
@@ -255,8 +304,22 @@ export async function collectLogRoots({ logRoots, excludedRepoRoots = [], from, 
       }
       if (event.kind === 'meta') continue;
       sessionDays.add(`${event.date}\0${event.sessionId}`);
-      if (event.kind === 'tool') callDays.add(`${event.date}\0${event.sessionId}\0${event.callId}`);
+      if (event.kind === 'tool') {
+        const key = `${event.date}\0${event.sessionId}\0${event.callId}`;
+        callDays.add(key);
+        toolCategories.set(key, event.category ?? 'other');
+      }
       if (event.kind === 'tokens') tokenEvents.push(event);
+      if (event.kind === 'skill') skillUsesByDate.set(event.date, (skillUsesByDate.get(event.date) ?? 0) + 1);
+      if (event.kind === 'mode') {
+        modeTurnsByDate.set(event.date, (modeTurnsByDate.get(event.date) ?? 0) + 1);
+        if (event.fast) fastTurnsByDate.set(event.date, (fastTurnsByDate.get(event.date) ?? 0) + 1);
+      }
+      if (event.kind === 'reasoning') {
+        const counts = reasoningByDate.get(event.date) ?? { none: 0, low: 0, medium: 0, high: 0, xhigh: 0, other: 0 };
+        counts[event.category] += 1;
+        reasoningByDate.set(event.date, counts);
+      }
     }
   }
   tokenEvents.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
@@ -279,9 +342,13 @@ export async function collectLogRoots({ logRoots, excludedRepoRoots = [], from, 
   for (let date = from; date <= to; date = addDays(date, 1)) {
     const sessions = [...sessionDays].filter((key) => key.startsWith(`${date}\0`)).length;
     const toolCalls = [...callDays].filter((key) => key.startsWith(`${date}\0`)).length;
+    const categories = [...toolCategories].filter(([key]) => key.startsWith(`${date}\0`)).map(([, category]) => category);
+    const newChats = [...firstActivityBySession.values()].filter((first) => first === date).length;
+    const optional = (kind, value) => optionalKinds.has(kind) && !optionalUnknownDates.has(`${date}\0${kind}`) ? value : null;
+    const reasoning = optional('reasoning', reasoningByDate.get(date) ?? { none: 0, low: 0, medium: 0, high: 0, xhigh: 0, other: 0 });
     days.push(unknownDates.has(date)
-      ? { date, active: sessions > 0 ? true : null, activeSessions: null, toolCalls: null, tokens: null, maxSessionTokens: null, longestSessionMinutes: null, coverage: sessions > 0 ? 'partial' : 'unknown' }
-      : { date, active: sessions > 0, activeSessions: sessions, toolCalls, tokens: tokensByDate.get(date) ?? 0, maxSessionTokens: maxSessionTokensByDate.get(date) ?? 0, longestSessionMinutes: longestSessionByDate.get(date) ?? 0, coverage: partial ? 'partial' : 'complete' });
+      ? { date, active: sessions > 0 ? true : null, activeSessions: null, newChats: null, toolCalls: null, pluginCalls: null, browserCalls: null, computerUseCalls: null, otherToolCalls: null, skillUses: null, tokens: null, maxSessionTokens: null, longestSessionMinutes: null, fastTurns: null, modeTurns: null, reasoningTurns: null, reasoning: null, coverage: sessions > 0 ? 'partial' : 'unknown' }
+      : { date, active: sessions > 0, activeSessions: sessions, newChats, toolCalls, pluginCalls: categories.filter((category) => category === 'plugin').length, browserCalls: categories.filter((category) => category === 'browser').length, computerUseCalls: categories.filter((category) => category === 'computer').length, otherToolCalls: categories.filter((category) => category === 'other').length, skillUses: optional('skill', skillUsesByDate.get(date) ?? 0), tokens: tokensByDate.get(date) ?? 0, maxSessionTokens: maxSessionTokensByDate.get(date) ?? 0, longestSessionMinutes: longestSessionByDate.get(date) ?? 0, fastTurns: optional('mode', fastTurnsByDate.get(date) ?? 0), modeTurns: optional('mode', modeTurnsByDate.get(date) ?? 0), reasoningTurns: reasoning && Object.values(reasoning).reduce((sum, count) => sum + count, 0), reasoning, coverage: partial ? 'partial' : 'complete' });
   }
   return { days, cache: nextCache, partial, files: files.length };
 }

@@ -16,7 +16,7 @@ import { acceptAcknowledgement, createEnvelope, nextDelivery, parseEnvelope, rec
 import * as deliveryExecution from '../../scripts/profile-activity/delivery-execution.mjs';
 import { renderActivitySvg } from '../../scripts/profile-activity/render.mjs';
 import { chooseLatestSnapshots, readSnapshot, saveAndExportSnapshot } from '../../scripts/profile-activity/snapshot.mjs';
-import { SOURCE_A, SOURCE_B, call, makePublicActivity, makeSnapshot, message, rolloutLines } from './fixtures.mjs';
+import { SOURCE_A, SOURCE_B, call, makePublicActivity, makeSnapshot, makeV3Snapshot, message, rolloutLines } from './fixtures.mjs';
 
 const run = promisify(execFile);
 const options = { asOfDate: '2026-09-13', referenceTime: '2026-09-13T09:00:00Z', expectedSourceIds: [SOURCE_A, SOURCE_B], independentSources: true };
@@ -158,6 +158,92 @@ function insightSnapshot({ sourceId = SOURCE_A, revision = 1, collectedAt = '202
     days: snapshot.days.map((day) => ({ ...day, tokens, maxSessionTokens, longestSessionMinutes })),
   };
 }
+
+test('v3 schema accepts exactly 30 anonymous KST days', () => {
+  const reasoning = { none: 1, low: 2, medium: 3, high: 4, xhigh: 5, other: 6 };
+  const parsed = parsePrivateSnapshot(makeV3Snapshot({
+    sessions: 2,
+    newChats: 1,
+    calls: 4,
+    pluginCalls: 1,
+    browserCalls: 1,
+    computerUseCalls: 1,
+    skillUses: 2,
+    fastTurns: 3,
+    modeTurns: 4,
+    reasoning,
+  }));
+  assert.equal(parsed.days.length, 30);
+  assert.deepEqual(parsed.days[0].reasoning, reasoning);
+  assert.equal(parsed.days[0].reasoningTurns, 21);
+  assert.doesNotMatch(stableJson(parsed), /sessionId|pluginName|skillName|modelName/);
+});
+
+test('v3 schema rejects wrong ranges, denominators, extras, and identifiers', () => {
+  const short = makeV3Snapshot();
+  short.window.from = '2026-08-16';
+  short.days.shift();
+  assert.throws(() => parsePrivateSnapshot(short), /30 days/);
+
+  const mode = makeV3Snapshot({ fastTurns: 2, modeTurns: 1 });
+  assert.throws(() => parsePrivateSnapshot(mode), /fastTurns/);
+
+  const reasoning = makeV3Snapshot({ reasoning: { none: 1, low: 0, medium: 0, high: 0, xhigh: 0, other: 0 } });
+  reasoning.days[0].reasoningTurns = 2;
+  assert.throws(() => parsePrivateSnapshot(reasoning), /reasoningTurns/);
+
+  const extra = makeV3Snapshot();
+  extra.days[0].pluginName = 'PRIVATE-PLUGIN-CANARY';
+  assert.throws(() => parsePrivateSnapshot(extra), /keys/);
+});
+
+test('v3 collector reduces sessions, tool families, and explicit structured events to anonymous counters', async () => {
+  const first = rolloutLines({ id: 'SESSION-CANARY-A', events: [
+    message('2026-09-12T01:00:00Z'),
+    call('2026-09-12T01:01:00Z', 'plugin', { name: 'PRIVATE-PLUGIN-NAME', plugin_id: 'PRIVATE-PLUGIN-ID' }),
+    { timestamp: '2026-09-12T01:02:00Z', type: 'response_item', payload: { type: 'web_search_call', call_id: 'web', query: 'PRIVATE-QUERY' } },
+    call('2026-09-12T01:03:00Z', 'computer', { name: 'computer_use' }),
+    call('2026-09-12T01:04:00Z', 'other', { name: 'shell' }),
+    { timestamp: '2026-09-12T01:05:00Z', type: 'event_msg', payload: { type: 'skill_use', skill_name: 'PRIVATE-SKILL-NAME' } },
+    { timestamp: '2026-09-12T01:06:00Z', type: 'event_msg', payload: { type: 'mode', mode: 'fast' } },
+    { timestamp: '2026-09-12T01:07:00Z', type: 'event_msg', payload: { type: 'reasoning', effort: 'high', model: 'PRIVATE-MODEL' } },
+  ] });
+  const second = rolloutLines({ id: 'SESSION-CANARY-B', events: [message('2026-09-12T02:00:00Z')] });
+  const day = (await collectFiles({ 'a.jsonl': first, 'b.jsonl': second })).days[0];
+  assert.deepEqual(day, {
+    date: '2026-09-12', active: true, activeSessions: 2, newChats: 2,
+    toolCalls: 4, pluginCalls: 1, browserCalls: 1, computerUseCalls: 1, otherToolCalls: 1,
+    skillUses: 1, tokens: 0, maxSessionTokens: 0, longestSessionMinutes: 120,
+    fastTurns: 1, modeTurns: 1, reasoningTurns: 1,
+    reasoning: { none: 0, low: 0, medium: 0, high: 1, xhigh: 0, other: 0 }, coverage: 'complete',
+  });
+  assert.doesNotMatch(stableJson(day), /SESSION-CANARY|PRIVATE|plugin_id|skill_name|model/);
+});
+
+test('v3 collector keeps absent or malformed optional telemetry null without corrupting core counts', async () => {
+  const absent = (await collectFiles({ 'a.jsonl': rolloutLines({ events: [call('2026-09-12T01:00:00Z', 'a')] }) })).days[0];
+  assert.equal(absent.toolCalls, 1);
+  assert.equal(absent.skillUses, null);
+  assert.equal(absent.fastTurns, null);
+  assert.equal(absent.reasoning, null);
+
+  const malformed = rolloutLines({ events: [
+    call('2026-09-12T01:00:00Z', 'a'),
+    { timestamp: '2026-09-12T01:01:00Z', type: 'event_msg', payload: { type: 'skill_use', skill_name: 7 } },
+  ] });
+  const day = (await collectFiles({ 'a.jsonl': malformed })).days[0];
+  assert.equal(day.toolCalls, 1);
+  assert.equal(day.skillUses, null);
+  assert.equal(day.coverage, 'complete');
+});
+
+test('v3 collector counts a chat as new only when its first activity is inside the window', async () => {
+  const old = rolloutLines({ events: [message('2026-08-01T01:00:00Z'), message('2026-09-12T01:00:00Z')] });
+  const fresh = rolloutLines({ id: 'fresh', events: [message('2026-09-12T02:00:00Z')] });
+  const day = (await collectFiles({ 'old.jsonl': old, 'fresh.jsonl': fresh })).days[0];
+  assert.equal(day.activeSessions, 2);
+  assert.equal(day.newChats, 1);
+});
 
 test('T50 envelope digest is metadata and verifies canonical snapshot bytes', () => {
   const snapshot = insightSnapshot();

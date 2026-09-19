@@ -39,6 +39,58 @@ export function makePublicActivity({ unknown = false, calls = 0 } = {}) {
   };
 }
 
+export function makeV3Days({
+  sessions = 0,
+  newChats = 0,
+  calls = 0,
+  pluginCalls = 0,
+  browserCalls = 0,
+  computerUseCalls = 0,
+  otherToolCalls = calls - pluginCalls - browserCalls - computerUseCalls,
+  skillUses = null,
+  fastTurns = null,
+  modeTurns = null,
+  reasoning = null,
+} = {}) {
+  const days = [];
+  for (let date = '2026-08-15'; date <= '2026-09-13'; date = addDays(date, 1)) {
+    days.push({
+      date,
+      active: sessions > 0 || calls > 0,
+      activeSessions: sessions,
+      newChats,
+      toolCalls: calls,
+      pluginCalls,
+      browserCalls,
+      computerUseCalls,
+      otherToolCalls,
+      skillUses,
+      tokens: 0,
+      maxSessionTokens: 0,
+      longestSessionMinutes: 0,
+      fastTurns,
+      modeTurns,
+      reasoningTurns: reasoning && Object.values(reasoning).reduce((sum, value) => sum + value, 0),
+      reasoning,
+      coverage: 'complete',
+    });
+  }
+  return days;
+}
+
+export function makeV3Snapshot({ sourceId = SOURCE_A, revision = 1, collectedAt = '2026-09-13T09:00:00.000Z', ...dayOptions } = {}) {
+  return {
+    schemaVersion: 3,
+    sourceId,
+    revision,
+    policyId: 'local-codex-v1-kst-exclude-profile',
+    collectedAt,
+    timezone: 'Asia/Seoul',
+    window: { from: '2026-08-15', to: '2026-09-13' },
+    days: makeV3Days(dayOptions),
+  };
+}
+
 export function rolloutLines({ id = 'session-a', cwd = '/work/project', events = [] } = {}) {
   return [
     { timestamp: '2026-09-12T00:00:00Z', type: 'session_meta', payload: { id, cwd } },

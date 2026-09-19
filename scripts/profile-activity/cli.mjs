@@ -105,13 +105,13 @@ async function collect(config, asOfDate, dryRun) {
   const cacheFile = path.join(config.stateDir, 'collector-cache.json');
   let cache = { files: {} };
   try { cache = JSON.parse(await readFile(cacheFile, 'utf8')); } catch {}
-  const from = addDays(asOfDate, -(config.retentionDays - 1));
+  const from = addDays(asOfDate, -(config.publicDays - 1));
   const result = await collectLogRoots({ logRoots: config.logRoots, excludedRepoRoots: config.excludedRepoRoots, from, to: asOfDate, cache });
   const snapshotFile = path.join(config.stateDir, 'snapshot.json');
   let revision = 1;
   try { revision = (await readSnapshot(snapshotFile, config.stateDir)).revision + 1; } catch {}
   const snapshot = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     sourceId: config.sourceId,
     revision,
     policyId: config.policyId,
