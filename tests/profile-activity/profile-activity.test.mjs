@@ -10,7 +10,7 @@ import { aggregateSnapshots } from '../../scripts/profile-activity/aggregate.mjs
 import { collectLogRoots, probeLogRoots } from '../../scripts/profile-activity/collect.mjs';
 import { parsePrivateSnapshot, parsePublicActivity, stableJson } from '../../scripts/profile-activity/contract.mjs';
 import { assertAllowedPaths, publishGenerated, verifyRuntimeManifest, withPublisherLock } from '../../scripts/profile-activity/publish.mjs';
-import { createEnvelope, parseEnvelope, receiveEnvelope } from '../../scripts/profile-activity/relay.mjs';
+import { acceptAcknowledgement, createEnvelope, nextDelivery, parseEnvelope, receiveEnvelope } from '../../scripts/profile-activity/relay.mjs';
 import { renderActivitySvg } from '../../scripts/profile-activity/render.mjs';
 import { chooseLatestSnapshots, readSnapshot, saveAndExportSnapshot } from '../../scripts/profile-activity/snapshot.mjs';
 import { SOURCE_A, SOURCE_B, call, makePublicActivity, makeSnapshot, message, rolloutLines } from './fixtures.mjs';
@@ -118,6 +118,35 @@ test('T51 receiver is idempotent and rejects rollback and conflict', async () =>
   await assert.rejects(receiveEnvelope({ envelope: createEnvelope(insightSnapshot({ revision: 1 })), expectedSourceId: SOURCE_A, lastGoodFile: file, stateScope: root }), /rollback/);
   await assert.rejects(receiveEnvelope({ envelope: createEnvelope(insightSnapshot({ revision: 2, calls: 9 })), expectedSourceId: SOURCE_A, lastGoodFile: file, stateScope: root }), /conflict/);
   assert.equal((await readSnapshot(file, root)).revision, 2);
+});
+
+test('T52 sender retries one revision four times and stops until acknowledgement', () => {
+  const snapshot = insightSnapshot({ revision: 7 });
+  let state = null;
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    const result = nextDelivery({ snapshot, state, date: '2026-09-19' });
+    assert.equal(result.status, 'send');
+    assert.equal(result.state.attempts, attempt);
+    state = result.state;
+  }
+  assert.equal(nextDelivery({ snapshot, state, date: '2026-09-19' }).status, 'retry-exhausted');
+  const acknowledgement = { status: 'received', revision: 7, digest: createEnvelope(snapshot).digest };
+  const accepted = acceptAcknowledgement({ acknowledgement, state });
+  assert.equal(accepted.acknowledgedRevision, 7);
+  assert.equal(nextDelivery({ snapshot, state: accepted, date: '2026-09-19' }).status, 'acknowledged');
+});
+
+test('T53 sender restart preserves the pending envelope and a new date resets it', () => {
+  const oldSnapshot = insightSnapshot({ revision: 7 });
+  const first = nextDelivery({ snapshot: oldSnapshot, state: null, date: '2026-09-19' });
+  const restored = JSON.parse(stableJson(first.state));
+  const nextSnapshot = insightSnapshot({ revision: 8 });
+  const retry = nextDelivery({ snapshot: nextSnapshot, state: restored, date: '2026-09-19' });
+  assert.deepEqual(retry.envelope, first.envelope);
+  assert.equal(retry.state.attempts, 2);
+  const nextDate = nextDelivery({ snapshot: nextSnapshot, state: restored, date: '2026-09-20' });
+  assert.equal(nextDate.envelope.revision, 8);
+  assert.equal(nextDate.state.attempts, 1);
 });
 
 test('T01 duplicate raw/archive copies do not increase counts', async () => {
