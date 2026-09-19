@@ -8,7 +8,9 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { aggregateSnapshots } from '../../scripts/profile-activity/aggregate.mjs';
 import { collectLogRoots, probeLogRoots } from '../../scripts/profile-activity/collect.mjs';
-import { parsePrivateSnapshot, parsePublicActivity, stableJson } from '../../scripts/profile-activity/contract.mjs';
+import { collectionPath, createRepositoryCollection } from '../../scripts/profile-activity/collection.mjs';
+import { parseConfig } from '../../scripts/profile-activity/config.mjs';
+import { parsePrivateSnapshot, parsePublicActivity, parseRepositoryCollection, stableJson } from '../../scripts/profile-activity/contract.mjs';
 import { collectorPlist } from '../../scripts/profile-activity/install-local.mjs';
 import { assertAllowedPaths, publishGenerated, verifyRuntimeManifest, withPublisherLock } from '../../scripts/profile-activity/publish.mjs';
 import { publicationDecision, publicationReceipt, publishIfReady } from '../../scripts/profile-activity/publication-gate.mjs';
@@ -16,7 +18,7 @@ import { acceptAcknowledgement, createEnvelope, nextDelivery, parseEnvelope, rec
 import * as deliveryExecution from '../../scripts/profile-activity/delivery-execution.mjs';
 import { renderActivitySvg } from '../../scripts/profile-activity/render.mjs';
 import { chooseLatestSnapshots, readSnapshot, saveAndExportSnapshot } from '../../scripts/profile-activity/snapshot.mjs';
-import { SOURCE_A, SOURCE_B, call, makePublicActivity, makeSnapshot, makeV3Input, makeV3Snapshot, message, rolloutLines } from './fixtures.mjs';
+import { REPOSITORY_COLLECTION_FORBIDDEN_KEYS, SOURCE_A, SOURCE_B, call, makeConfig, makePublicActivity, makeSnapshot, makeV3Input, makeV3Snapshot, message, rolloutLines } from './fixtures.mjs';
 
 const run = promisify(execFile);
 const options = { asOfDate: '2026-09-13', referenceTime: '2026-09-13T09:00:00Z', expectedSourceIds: [SOURCE_A, SOURCE_B], independentSources: true };
@@ -49,7 +51,7 @@ async function installedCollectorFixture() {
   await mkdir(logs);
   const config = path.join(stateDir, 'installed-config.json');
   const configText = stableJson({
-    schemaVersion: 1, role: 'collector', sourceId: SOURCE_A, policyId: 'local-codex-v1-kst-exclude-profile', codexHome: root, logRoots: [logs], stateDir, transportDir: null,
+    schemaVersion: 1, role: 'collector', collectionSlot: 'macbook', sourceId: SOURCE_A, policyId: 'local-codex-v1-kst-exclude-profile', codexHome: root, logRoots: [logs], stateDir, transportDir: null,
     runtimeDir, runtimeManifest, excludedRepoRoots: [], expectedSources: [], independentSources: false, publicDays: 30, retentionDays: 90, staleAfterHours: 48, timezone: 'Asia/Seoul',
   });
   await writeFile(config, configText);
@@ -72,7 +74,7 @@ async function installedPublisherFixture() {
   await mkdir(logs);
   const config = path.join(stateDir, 'installed-config.json');
   const configText = stableJson({
-    schemaVersion: 1, role: 'publisher', sourceId: SOURCE_B, policyId: 'local-codex-v1-kst-exclude-profile', codexHome: root, logRoots: [logs], stateDir, transportDir: root,
+    schemaVersion: 1, role: 'publisher', collectionSlot: 'macmini', sourceId: SOURCE_B, policyId: 'local-codex-v1-kst-exclude-profile', codexHome: root, logRoots: [logs], stateDir, transportDir: root,
     runtimeDir, runtimeManifest, excludedRepoRoots: [], expectedSources: [{ sourceId: SOURCE_B, location: 'local', file: path.join(root, 'self.json') }, { sourceId: SOURCE_A, location: 'transport', file: path.join(root, 'remote.json') }], independentSources: true, publicDays: 30, retentionDays: 90, staleAfterHours: 48, timezone: 'Asia/Seoul',
     publisher: { repoDir: root, remote: 'synthetic', branch: 'main', candidateRoot: path.join(root, 'candidates'), retryLimit: 0, hooksPath: '', hooksManifest: {} },
   });
@@ -177,6 +179,26 @@ test('v3 schema accepts exactly 30 anonymous KST days', () => {
   assert.deepEqual(parsed.days[0].reasoning, reasoning);
   assert.equal(parsed.days[0].reasoningTurns, 21);
   assert.doesNotMatch(stableJson(parsed), /sessionId|pluginName|skillName|modelName/);
+});
+
+test('repository collection accepts only anonymous v3 snapshots in fixed slots', () => {
+  const snapshot = makeV3Snapshot({ calls: 1, pluginCalls: 1, skillUses: 1 });
+  assert.deepEqual(createRepositoryCollection(snapshot), parseRepositoryCollection(snapshot));
+  assert.equal(collectionPath('macbook'), 'metrics/codex-activity-macbook.json');
+  assert.equal(collectionPath('macmini'), 'metrics/codex-activity-macmini.json');
+  assert.throws(() => collectionPath('../peer'), /invalid collection slot/);
+  assert.equal(parseConfig(makeConfig()).collectionSlot, 'macbook');
+  assert.throws(() => parseConfig(makeConfig({ collectionSlot: '../peer' })), /invalid collection slot/);
+  const missingSlot = makeConfig();
+  delete missingSlot.collectionSlot;
+  assert.throws(() => parseConfig(missingSlot), /invalid collection slot/);
+  for (const key of REPOSITORY_COLLECTION_FORBIDDEN_KEYS) {
+    assert.throws(() => parseRepositoryCollection({ ...snapshot, [key]: 'PRIVATE-CANARY' }));
+  }
+  for (const key of ['pluginName', 'skillName', 'path']) {
+    const days = snapshot.days.map((day, index) => index === 0 ? { ...day, [key]: 'PRIVATE-CANARY' } : day);
+    assert.throws(() => parseRepositoryCollection({ ...snapshot, days }));
+  }
 });
 
 test('v3 schema rejects wrong ranges, denominators, extras, and identifiers', () => {
@@ -1132,6 +1154,7 @@ test('T35 operational CLI rejects an empty manifest before writing state', async
   await writeFile(configFile, stableJson({
     schemaVersion: 1,
     role: 'collector',
+    collectionSlot: 'macbook',
     sourceId: SOURCE_A,
     policyId: 'local-codex-v1-kst-exclude-profile',
     codexHome: root,
@@ -1167,6 +1190,7 @@ test('T35 runtime verification happens before local modules execute', async () =
   await writeFile(configFile, stableJson({
     schemaVersion: 1,
     role: 'collector',
+    collectionSlot: 'macbook',
     sourceId: SOURCE_A,
     policyId: 'local-codex-v1-kst-exclude-profile',
     codexHome: root,
@@ -1250,6 +1274,7 @@ test('T41 installer uses the approved commit bytes instead of dirty source', asy
   await writeFile(configFile, stableJson({
     schemaVersion: 1,
     role: 'publisher',
+    collectionSlot: 'macmini',
     sourceId: SOURCE_A,
     policyId: 'local-codex-v1-kst-exclude-profile',
     codexHome: root,
@@ -1316,6 +1341,7 @@ test('T36 uninstall refuses a runtime directory containing unmanaged files', asy
   await writeFile(configFile, stableJson({
     schemaVersion: 1,
     role: 'publisher',
+    collectionSlot: 'macmini',
     sourceId: SOURCE_A,
     policyId: 'local-codex-v1-kst-exclude-profile',
     codexHome: root,

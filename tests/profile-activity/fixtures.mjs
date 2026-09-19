@@ -1,7 +1,32 @@
+import path from 'node:path';
 import { addDays } from '../../scripts/profile-activity/contract.mjs';
 
 export const SOURCE_A = '11111111-1111-4111-8111-111111111111';
 export const SOURCE_B = '22222222-2222-4222-8222-222222222222';
+export const REPOSITORY_COLLECTION_FORBIDDEN_KEYS = ['sourceId', 'deviceId', 'digest', 'collectionSlot', 'pluginName', 'skillName', 'path', 'extra'];
+
+export function makeConfig({ collectionSlot = 'macbook', root = path.resolve('synthetic-profile-activity') } = {}) {
+  return {
+    schemaVersion: 1,
+    role: 'collector',
+    collectionSlot,
+    sourceId: SOURCE_A,
+    policyId: 'local-codex-v1-kst-exclude-profile',
+    codexHome: root,
+    logRoots: [path.join(root, 'logs')],
+    stateDir: path.join(root, 'state'),
+    transportDir: null,
+    runtimeDir: path.join(root, 'runtime'),
+    runtimeManifest: { 'cli.mjs': '0'.repeat(64) },
+    excludedRepoRoots: [],
+    expectedSources: [],
+    independentSources: false,
+    publicDays: 30,
+    retentionDays: 90,
+    staleAfterHours: 48,
+    timezone: 'Asia/Seoul',
+  };
+}
 
 export function makeDays({ from = '2026-06-16', to = '2026-09-13', sessions = 0, calls = 0, coverage = 'complete' } = {}) {
   const days = [];

@@ -133,6 +133,12 @@ export function parsePrivateSnapshot(value) {
   return { schemaVersion: value.schemaVersion, ...(value.schemaVersion === 3 ? {} : { sourceId: value.sourceId }), revision: value.revision, policyId: value.policyId, collectedAt: new Date(value.collectedAt).toISOString(), timezone: value.timezone, window, days };
 }
 
+export function parseRepositoryCollection(value) {
+  const collection = parsePrivateSnapshot(value);
+  if (collection.schemaVersion !== 3) throw new Error('repository collection requires schema v3');
+  return collection;
+}
+
 export function parsePublicActivity(value) {
   const profile = [2, 3].includes(value?.schemaVersion);
   const surface = value?.schemaVersion === 3;

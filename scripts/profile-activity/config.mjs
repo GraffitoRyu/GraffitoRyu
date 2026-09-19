@@ -13,9 +13,10 @@ function keys(value, allowed, name) {
 }
 
 export function parseConfig(value) {
-  const allowed = ['schemaVersion', 'role', 'sourceId', 'policyId', 'codexHome', 'logRoots', 'stateDir', 'transportDir', 'runtimeDir', 'runtimeManifest', 'excludedRepoRoots', 'expectedSources', 'independentSources', 'publicDays', 'retentionDays', 'staleAfterHours', 'timezone', 'publisher', 'launchAgent'];
+  const allowed = ['schemaVersion', 'role', 'collectionSlot', 'sourceId', 'policyId', 'codexHome', 'logRoots', 'stateDir', 'transportDir', 'runtimeDir', 'runtimeManifest', 'excludedRepoRoots', 'expectedSources', 'independentSources', 'publicDays', 'retentionDays', 'staleAfterHours', 'timezone', 'publisher', 'launchAgent'];
   keys(value, allowed, 'config');
   if (value.schemaVersion !== 1 || !['collector', 'publisher'].includes(value.role)) throw new Error('invalid config identity');
+  if (!['macbook', 'macmini'].includes(value.collectionSlot)) throw new Error('invalid collection slot');
   if (!UUID.test(value.sourceId) || value.policyId !== 'local-codex-v1-kst-exclude-profile' || value.timezone !== 'Asia/Seoul') throw new Error('invalid config policy');
   if (!Array.isArray(value.logRoots) || value.logRoots.length < 1 || !Array.isArray(value.excludedRepoRoots)) throw new Error('invalid config roots');
   if (!value.runtimeManifest || typeof value.runtimeManifest !== 'object' || Array.isArray(value.runtimeManifest) || Object.entries(value.runtimeManifest).some(([name, digest]) => path.isAbsolute(name) || name.split(path.sep).includes('..') || !/^[0-9a-f]{64}$/.test(digest))) throw new Error('invalid runtimeManifest');
