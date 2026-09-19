@@ -118,6 +118,8 @@ async function main() {
     for (const name of Object.keys(config.runtimeManifest)) await unlink(path.join(config.runtimeDir, name));
     await unlink(path.join(config.runtimeDir, 'manifest.json'));
     await rmdir(config.runtimeDir);
+    await unlink(installedConfigFile);
+    await unlink(receiptFile);
     process.stdout.write(stableJson({ status: 'runtime-removed', registration: 'removed' }));
     return;
   }

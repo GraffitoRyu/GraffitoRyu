@@ -658,6 +658,10 @@ test('T41 installer uses the approved commit bytes instead of dirty source', asy
   const removed = JSON.parse((await run(process.execPath, [path.join(sourceScripts, 'install-local.mjs'), '--remove', '--config', installedConfig])).stdout);
   assert.equal(removed.status, 'runtime-removed');
   await assert.rejects(readFile(path.join(installedRuntime, 'aggregate.mjs'), 'utf8'));
+  await assert.rejects(readFile(installedConfig, 'utf8'));
+  await assert.rejects(readFile(receiptFile, 'utf8'));
+  const reinstalled = JSON.parse((await run(process.execPath, [path.join(sourceScripts, 'install-local.mjs'), '--apply', '--config', configFile, '--source-commit', commit])).stdout);
+  assert.equal(reinstalled.status, 'runtime-installed');
 });
 
 test('T36 an existing installation target is not overwritten', async () => {
