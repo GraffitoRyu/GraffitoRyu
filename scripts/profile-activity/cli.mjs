@@ -6,23 +6,14 @@ import { fileURLToPath } from 'node:url';
 
 let addDays;
 let parseAccountUsage;
-let processActivitySurface;
 let atomicWrite;
 let collectLogRoots;
-let isPublishableActivity;
 let parseDate;
 let parsePrivateSnapshot;
 let probeLogRoots;
-let publishGenerated;
-let publishGeneratedUnlocked;
-let publishIfReady;
+let publishCollection;
 let readConfig;
 let readSnapshot;
-let renderActivitySvg;
-let nextDelivery;
-let acceptAcknowledgement;
-let receiveEnvelope;
-let saveAndExportSnapshot;
 let stableJson;
 let classifyFailure;
 let executionStage = 'startup';
@@ -67,22 +58,19 @@ async function verifyBeforeImport(argv) {
 }
 
 async function loadRuntime() {
-  ({ parseAccountUsage, processActivitySurface } = await import('./account-usage.mjs'));
+  ({ parseAccountUsage } = await import('./account-usage.mjs'));
   ({ collectLogRoots, probeLogRoots } = await import('./collect.mjs'));
   ({ readConfig } = await import('./config.mjs'));
-  ({ addDays, isPublishableActivity, parseDate, parsePrivateSnapshot, stableJson } = await import('./contract.mjs'));
-  ({ publishGenerated, publishGeneratedUnlocked } = await import('./publish.mjs'));
-  ({ publishIfReady } = await import('./publication-gate.mjs'));
-  ({ acceptAcknowledgement, nextDelivery, receiveEnvelope } = await import('./relay.mjs'));
+  ({ addDays, parseDate, parsePrivateSnapshot, stableJson } = await import('./contract.mjs'));
+  ({ publishCollection } = await import('./publish.mjs'));
   ({ failureEvidence: classifyFailure } = await import('./delivery-execution.mjs'));
-  ({ renderActivitySvg } = await import('./render.mjs'));
-  ({ atomicWrite, readSnapshot, saveAndExportSnapshot } = await import('./snapshot.mjs'));
+  ({ atomicWrite, readSnapshot } = await import('./snapshot.mjs'));
 }
 
 function argumentsFor(argv) {
   const [command, ...rest] = argv;
   const configIndex = rest.indexOf('--config');
-  if (!['probe', 'collect', 'refresh', 'run', 'outbox', 'acknowledge', 'receive'].includes(command) || configIndex < 0 || !rest[configIndex + 1]) throw new Error('usage');
+  if (!['probe', 'collect', 'run'].includes(command) || configIndex < 0 || !rest[configIndex + 1]) throw new Error('usage');
   const dateIndex = rest.indexOf('--as-of');
   return { command, configFile: rest[configIndex + 1], dryRun: rest.includes('--dry-run'), asOfDate: dateIndex < 0 ? null : parseDate(rest[dateIndex + 1]) };
 }
@@ -134,8 +122,7 @@ async function collect(config, asOfDate, dryRun) {
   };
   if (!dryRun) {
     await atomicWrite(cacheFile, result.cache, config.stateDir);
-    const exportFile = config.transportDir ? path.join(config.transportDir, `${config.sourceId}.json`) : null;
-    await saveAndExportSnapshot({ snapshot, localFile: snapshotFile, localScope: config.stateDir, exportFile, exportScope: config.transportDir });
+    await atomicWrite(snapshotFile, parsePrivateSnapshot(snapshot), config.stateDir);
   }
   const known = (key) => result.days.every((day) => day[key] !== null);
   return { snapshot, summary: {
@@ -148,34 +135,9 @@ async function collect(config, asOfDate, dryRun) {
   } };
 }
 
-async function publisherSnapshots(config) {
-  const snapshots = [];
-  const add = (snapshot, sourceId) => snapshots.push({ sourceId, snapshot });
-  for (const source of config.expectedSources) {
-    if (source.sourceId === config.sourceId) {
-      try { add(await readSnapshot(path.join(config.stateDir, 'snapshot.json'), config.stateDir), source.sourceId); } catch (error) {
-        if (error.code !== 'ENOENT') throw error;
-      }
-      continue;
-    }
-    const cacheFile = path.join(config.stateDir, `last-good-${source.sourceId}.json`);
-    try {
-      add(await readSnapshot(cacheFile, config.stateDir), source.sourceId);
-      continue;
-    } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
-    }
-    const scope = source.location === 'local' ? config.stateDir : config.transportDir;
-    try { add(await readSnapshot(source.file, scope), source.sourceId); } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
-    }
-  }
-  return snapshots;
-}
-
 async function main() {
   const requestedCommand = process.argv[2];
-  if (['probe', 'collect', 'refresh', 'run', 'outbox', 'acknowledge', 'receive'].includes(requestedCommand)) executionStage = requestedCommand;
+  if (['probe', 'collect', 'run'].includes(requestedCommand)) executionStage = requestedCommand;
   await verifyBeforeImport(process.argv.slice(2));
   await loadRuntime();
   const args = argumentsFor(process.argv.slice(2));
@@ -192,74 +154,21 @@ async function main() {
     process.stdout.write(stableJson({ status: args.dryRun ? 'dry-run' : 'collected', ...result.summary }));
     return;
   }
-  if (args.command === 'outbox') {
-    if (config.role !== 'collector') throw new Error('collector role required');
-    const stateFile = path.join(config.stateDir, 'delivery-state.json');
-    const snapshot = await readSnapshot(path.join(config.stateDir, 'snapshot.json'), config.stateDir);
-    let state = null;
-    try { state = JSON.parse(await readFile(stateFile, 'utf8')); } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
-    }
-    const result = nextDelivery({ snapshot, state, date: todayKst() });
-    await atomicWrite(stateFile, result.state, config.stateDir);
-    stateChanged = true;
-    process.stdout.write(stableJson({ status: result.status, ...(result.envelope && { envelope: result.envelope }) }));
-    return;
-  }
-  if (args.command === 'acknowledge') {
-    if (config.role !== 'collector') throw new Error('collector role required');
-    const stateFile = path.join(config.stateDir, 'delivery-state.json');
-    const state = JSON.parse(await readFile(stateFile, 'utf8'));
-    const accepted = acceptAcknowledgement({ acknowledgement: await readPrivateInput(), state });
-    await atomicWrite(stateFile, accepted, config.stateDir);
-    stateChanged = true;
-    process.stdout.write(stableJson({ status: 'acknowledged', revision: accepted.acknowledgedRevision, ...(accepted.envelope.schema === 'PROFILE_ACTIVITY_SNAPSHOT_V3' ? {} : { digest: accepted.acknowledgedDigest }) }));
-    return;
-  }
-  if (config.role !== 'publisher') throw new Error('publisher role required');
-  if (args.command === 'receive') {
-    const sources = config.expectedSources.filter(({ location, sourceId }) => location === 'transport' && sourceId !== config.sourceId);
-    if (sources.length !== 1) throw new Error('single transport source required');
-    const source = sources[0];
-    const result = await receiveEnvelope({ envelope: await readPrivateInput(), expectedSourceId: source.sourceId, lastGoodFile: path.join(config.stateDir, `last-good-${source.sourceId}.json`), stateScope: config.stateDir });
-    stateChanged = result.status === 'received';
-    process.stdout.write(stableJson(result));
-    return;
-  }
+  if (!config.publisher) throw new Error('repository publication config required');
   let accountUsage = null;
-  if (args.command === 'run' && process.argv.includes('--account-usage-stdin')) {
+  if (process.argv.includes('--account-usage-stdin')) {
+    if (config.collectionSlot !== 'macmini' || config.role !== 'publisher') throw new Error('publisher account usage required');
     accountUsage = parseAccountUsage(await readPrivateInput());
-    if (accountUsage !== null) {
+    if (!args.dryRun) {
+      stateChanged = 'unknown';
       await atomicWrite(path.join(config.stateDir, 'account-usage.json'), accountUsage, config.stateDir);
       stateChanged = true;
     }
   }
-  const now = new Date().toISOString();
-  const snapshots = await publisherSnapshots(config);
-  if (args.dryRun) {
-    const { activity } = processActivitySurface(snapshots, { asOfDate, referenceTime: now, expectedSourceIds: config.expectedSources.map(({ sourceId }) => sourceId), independentSources: config.independentSources, staleAfterHours: config.staleAfterHours }, accountUsage);
-    const generated = { 'metrics/codex-activity.json': stableJson(activity), 'assets/codex-activity.svg': renderActivitySvg(activity) };
-    await publishGenerated(config, generated, { dryRun: true });
-    stateChanged = 'unknown';
-    await atomicWrite(path.join(config.stateDir, 'preview.json'), generated['metrics/codex-activity.json'], config.stateDir);
-    await atomicWrite(path.join(config.stateDir, 'preview.svg'), generated['assets/codex-activity.svg'], config.stateDir);
-    stateChanged = true;
-    process.stdout.write(stableJson({ status: 'dry-run', aggregateStatus: activity.status }));
-    return;
-  }
-  if (stateChanged === false) stateChanged = 'unknown';
-  const result = await publishIfReady({
-    config,
-    snapshots,
-    expectedSourceIds: config.expectedSources.map(({ sourceId }) => sourceId),
-    now,
-    receiptFile: path.join(config.stateDir, 'publication-receipt.json'),
-    publish: async (readySnapshots) => {
-      const { activity } = processActivitySurface(readySnapshots, { asOfDate, referenceTime: now, expectedSourceIds: config.expectedSources.map(({ sourceId }) => sourceId), independentSources: config.independentSources, staleAfterHours: config.staleAfterHours }, accountUsage);
-      if (!isPublishableActivity(activity)) throw new Error('aggregate unavailable');
-      return publishGeneratedUnlocked(config, { 'metrics/codex-activity.json': stableJson(activity), 'assets/codex-activity.svg': renderActivitySvg(activity) });
-    },
-  });
+  if (!args.dryRun) stateChanged = 'unknown';
+  const { snapshot } = await collect(config, asOfDate, args.dryRun);
+  const result = await publishCollection(config, snapshot, { dryRun: args.dryRun, accountUsage });
+  if (!args.dryRun) stateChanged = true;
   process.stdout.write(stableJson(result));
 }
 

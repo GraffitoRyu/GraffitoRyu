@@ -3,11 +3,8 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseDate } from './contract.mjs';
-import { parseEnvelope } from './relay.mjs';
 
-const COMMANDS = new Set(['outbox', 'acknowledge', 'receive', 'run']);
-const ENTRYPOINT_COMMANDS = new Set([...COMMANDS, 'receive-run']);
+const COMMANDS = new Set(['run']);
 const MAX_BUFFER = 2 * 1024 * 1024;
 
 function exactKeys(value, expected, name) {
@@ -15,38 +12,13 @@ function exactKeys(value, expected, name) {
   if (Object.keys(value).sort().join(',') !== [...expected].sort().join(',')) throw new Error(`invalid ${name} keys`);
 }
 
-function acknowledgement(value, statuses, pendingEnvelope) {
-  const v3 = pendingEnvelope?.schema === 'PROFILE_ACTIVITY_SNAPSHOT_V3' || !Object.hasOwn(value ?? {}, 'digest');
-  exactKeys(value, v3 ? ['status', 'revision'] : ['status', 'revision', 'digest'], 'acknowledgement');
-  if (!statuses.includes(value.status) || !Number.isSafeInteger(value.revision) || value.revision < 1 || !v3 && !/^[0-9a-f]{64}$/.test(value.digest)) throw new Error('invalid acknowledgement');
-  if (pendingEnvelope && (value.revision !== pendingEnvelope.revision || !v3 && value.digest !== pendingEnvelope.digest)) throw new Error('acknowledgement mismatch');
-  return value;
-}
-
-export function parseDeliveryCliOutput(command, text, pendingEnvelope = null) {
-  if (!COMMANDS.has(command) || typeof text !== 'string') throw new Error('invalid delivery command');
+export function parseDeliveryCliOutput(command, text) {
+  if (!COMMANDS.has(command) || typeof text !== 'string') throw new Error('invalid publication command');
   const value = JSON.parse(text);
-  if (command === 'acknowledge') return acknowledgement(value, ['acknowledged'], pendingEnvelope);
-  if (command === 'receive') return acknowledgement(value, ['received', 'acknowledged'], pendingEnvelope);
-  if (command === 'outbox') {
-    if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.status !== 'string') throw new Error('invalid outbox result');
-    if (value.status === 'send') {
-      exactKeys(value, ['status', 'envelope'], 'outbox result');
-      return { status: 'send', envelope: parseEnvelope(value.envelope) };
-    }
-    if (!['acknowledged', 'retry-exhausted'].includes(value.status)) throw new Error('invalid outbox status');
-    exactKeys(value, ['status'], 'outbox result');
-    return value;
-  }
   if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.status !== 'string') throw new Error('invalid run result');
   if (value.status === 'published') {
     exactKeys(value, ['status', 'commit'], 'run result');
     if (typeof value.commit !== 'string' || !/^[0-9a-f]{40}$/.test(value.commit)) throw new Error('invalid publication commit');
-    return value;
-  }
-  if (['before-window', 'awaiting-source', 'already-published'].includes(value.status)) {
-    exactKeys(value, ['status', 'date'], 'run result');
-    parseDate(value.date, 'run date');
     return value;
   }
   if (!['no-op', 'skipped-lock'].includes(value.status)) throw new Error('invalid run status');
@@ -81,13 +53,13 @@ function installedPaths(receiptFile) {
   return { nodeBinary: receipt.nodeBinary, cli: path.join(receipt.runtimeDir, 'cli.mjs'), config: path.join(receipt.stateDir, 'installed-config.json') };
 }
 
-function invoke(paths, command, input, pendingEnvelope) {
+function invoke(paths, command, input) {
   try {
     const stdout = execFileSync(paths.nodeBinary, [paths.cli, command, '--config', paths.config, ...(command === 'run' && input !== undefined ? ['--account-usage-stdin'] : [])], {
       encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: MAX_BUFFER,
       ...(input === undefined ? {} : { input: JSON.stringify(input) }),
     });
-    return parseDeliveryCliOutput(command, stdout, pendingEnvelope);
+    return parseDeliveryCliOutput(command, stdout);
   } catch (error) {
     const failure = new Error(`delivery ${command} failed`);
     try { failure.evidence = parseFailureEvidence(error.stderr, command); }
@@ -97,34 +69,26 @@ function invoke(paths, command, input, pendingEnvelope) {
 }
 
 export function createInstalledCliInvocation(options) {
-  if (!options || Object.keys(options).some((key) => !['receiptFile', 'command', 'input', 'pendingEnvelope'].includes(key))) throw new Error('invalid invocation keys');
-  const { receiptFile, command, input, pendingEnvelope = null } = options;
-  if (!ENTRYPOINT_COMMANDS.has(command)) throw new Error('invalid invocation');
+  if (!options || Object.keys(options).some((key) => !['receiptFile', 'command', 'input'].includes(key))) throw new Error('invalid invocation keys');
+  const { receiptFile, command, input } = options;
+  if (!COMMANDS.has(command)) throw new Error('invalid invocation');
   const paths = installedPaths(receiptFile);
   let started = false;
   return {
     run() {
       if (started) throw new Error('invocation already started');
       started = true;
-      if (command !== 'receive-run') return invoke(paths, command, input, pendingEnvelope);
-      const envelope = parseEnvelope(input);
-      const acknowledgement = invoke(paths, 'receive', envelope, envelope);
-      const publication = invoke(paths, 'run');
-      return { status: 'completed', acknowledgement, publication };
+      return invoke(paths, command, input);
     },
   };
 }
 
 function main() {
   const [command, flag, receiptFile, ...extra] = process.argv.slice(2);
-  if (!ENTRYPOINT_COMMANDS.has(command) || flag !== '--receipt' || !receiptFile || extra.length) throw new Error('usage');
-  const requiredInput = ['acknowledge', 'receive', 'receive-run'].includes(command);
-  const optionalInput = command === 'run';
-  const inputText = requiredInput || optionalInput ? readFileSync(0, 'utf8').trim() : '';
+  if (!COMMANDS.has(command) || flag !== '--receipt' || !receiptFile || extra.length) throw new Error('usage');
+  const inputText = readFileSync(0, 'utf8').trim();
   const input = inputText ? JSON.parse(inputText) : undefined;
-  if (requiredInput && input === undefined) throw new Error('input required');
-  const pendingEnvelope = ['receive', 'receive-run'].includes(command) ? input : null;
-  process.stdout.write(`${JSON.stringify(createInstalledCliInvocation({ receiptFile, command, input, pendingEnvelope }).run())}\n`);
+  process.stdout.write(`${JSON.stringify(createInstalledCliInvocation({ receiptFile, command, input }).run())}\n`);
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {

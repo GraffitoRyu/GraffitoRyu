@@ -13,8 +13,6 @@ import { parseConfig } from '../../scripts/profile-activity/config.mjs';
 import { parsePrivateSnapshot, parsePublicActivity, parseRepositoryCollection, stableJson } from '../../scripts/profile-activity/contract.mjs';
 import { collectorPlist } from '../../scripts/profile-activity/install-local.mjs';
 import { assertAllowedPaths, publishGenerated, verifyRuntimeManifest, withPublisherLock } from '../../scripts/profile-activity/publish.mjs';
-import { publicationDecision, publicationReceipt, publishIfReady } from '../../scripts/profile-activity/publication-gate.mjs';
-import { acceptAcknowledgement, createEnvelope, nextDelivery, parseEnvelope, receiveEnvelope } from '../../scripts/profile-activity/relay.mjs';
 import * as deliveryExecution from '../../scripts/profile-activity/delivery-execution.mjs';
 import { renderActivitySvg } from '../../scripts/profile-activity/render.mjs';
 import { chooseLatestSnapshots, readSnapshot, saveAndExportSnapshot } from '../../scripts/profile-activity/snapshot.mjs';
@@ -119,6 +117,157 @@ async function publisherRepo() {
 function shellQuote(value) {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
+
+async function seedCollections(fixture, peer) {
+  await mkdir(path.join(fixture.repo, 'metrics'), { recursive: true });
+  await mkdir(path.join(fixture.repo, 'assets'), { recursive: true });
+  for (const [name, bytes] of Object.entries(fixture.generated)) await writeFile(path.join(fixture.repo, name), bytes);
+  if (peer !== null) await writeFile(path.join(fixture.repo, collectionPath('macbook')), typeof peer === 'string' ? peer : stableJson(peer));
+  await run('git', ['-C', fixture.repo, 'add', 'metrics', 'assets']);
+  await run('git', ['-C', fixture.repo, 'commit', '-m', 'seed collections']);
+  await run('git', ['-C', fixture.repo, 'push', 'origin', 'main']);
+  Object.assign(fixture.config, { collectionSlot: 'macmini', independentSources: true, staleAfterHours: 36 });
+}
+
+async function configureInstalledPublication(fixture, publisher, collectionSlot) {
+  const config = JSON.parse(await readFile(fixture.config, 'utf8'));
+  Object.assign(config, { publisher: publisher.config.publisher, collectionSlot });
+  const configText = stableJson(config);
+  await writeFile(fixture.config, configText);
+  const receipt = JSON.parse(await readFile(fixture.receiptFile, 'utf8'));
+  await writeFile(fixture.receiptFile, stableJson({ ...receipt, installedConfigDigest: createHash('sha256').update(configText).digest('hex') }));
+}
+
+test('direct collection publication installed run collects once and ignores old relay state', async () => {
+  const fixture = await installedCollectorFixture();
+  const publisher = await publisherRepo();
+  await configureInstalledPublication(fixture, publisher, 'macbook');
+  await writeFile(path.join(fixture.stateDir, 'snapshot.json'), stableJson(makeV3Snapshot({ revision: 5 })));
+  await writeFile(path.join(fixture.stateDir, 'delivery-state.json'), 'PRIVATE-CANARY malformed old state');
+  const result = deliveryExecution.createInstalledCliInvocation({ receiptFile: fixture.receiptFile, command: 'run' }).run();
+  assert.equal(result.status, 'published');
+  const snapshot = await readSnapshot(path.join(fixture.stateDir, 'snapshot.json'), fixture.stateDir);
+  assert.equal(snapshot.revision, 6);
+  assert.equal((await run('git', ['--git-dir', publisher.remote, 'show', `main:${collectionPath('macbook')}`])).stdout, stableJson(snapshot));
+  assert.equal(await readFile(path.join(fixture.stateDir, 'delivery-state.json'), 'utf8'), 'PRIVATE-CANARY malformed old state');
+});
+
+test('direct collection publication removed relay commands reject before writing state', async () => {
+  const fixture = await installedCollectorFixture();
+  const before = await readdir(fixture.stateDir);
+  for (const command of ['outbox', 'receive', 'acknowledge', 'receive-run']) {
+    await assert.rejects(run(process.execPath, [fixture.cli, command, '--config', fixture.config]));
+    assert.throws(() => deliveryExecution.createInstalledCliInvocation({ receiptFile: fixture.receiptFile, command }));
+  }
+  assert.deepEqual(await readdir(fixture.stateDir), before);
+});
+
+test('direct collection publication installed entrypoint preserves sanitized failure and runs once', async () => {
+  const fixture = await installedPublisherFixture();
+  await configureInstalledPublication(fixture, await publisherRepo(), 'macmini');
+  const invocation = deliveryExecution.createInstalledCliInvocation({ receiptFile: fixture.receiptFile, command: 'run', input: { extra: 'PRIVATE-PATH-CANARY' } });
+  assert.throws(() => invocation.run(), (error) => {
+    assert.deepEqual(error.evidence, { status: 'error', stage: 'run', exitCode: 1, signal: null, errorClass: 'validation', stderrClass: 'validation-rejected', stateChanged: false });
+    assert.equal(Object.hasOwn(error, 'stderr'), false);
+    assert.equal(Object.hasOwn(error, 'stdout'), false);
+    assert.doesNotMatch(stableJson(error.evidence), /PRIVATE|CANARY/);
+    return true;
+  });
+  assert.throws(() => invocation.run(), /already started/);
+  await assert.rejects(readFile(path.join(fixture.stateDir, 'snapshot.json')), { code: 'ENOENT' });
+  const output = await runWithInput(process.execPath, [fixture.delivery, 'run', '--receipt', fixture.receiptFile], '');
+  assert.equal(JSON.parse(output.stdout).status, 'published');
+  assert.throws(() => deliveryExecution.parseDeliveryCliOutput('run', '{"status":"published","commit":"bad"}'));
+  assert.throws(() => deliveryExecution.parseDeliveryCliOutput('run', '{"status":"no-op","extra":"PRIVATE-CANARY"}'));
+});
+
+test('direct collection publication stages own slot and merged pair without touching peer', async () => {
+  const fixture = await publisherRepo();
+  const peer = makeV3Snapshot({ calls: 2 });
+  await seedCollections(fixture, peer);
+  const { publishCollection } = await import('../../scripts/profile-activity/publish.mjs');
+  assert.equal(typeof publishCollection, 'function');
+  const result = await publishCollection(fixture.config, makeV3Snapshot({ calls: 3 }), { now: options.referenceTime });
+  assert.equal(result.status, 'published');
+  const stagedPaths = (await run('git', ['--git-dir', fixture.remote, 'diff-tree', '--no-commit-id', '--name-only', '-r', 'main'])).stdout.trim().split('\n');
+  assert.deepEqual(stagedPaths, [collectionPath('macmini'), ...Object.keys(fixture.generated)].sort());
+  assert.equal((await run('git', ['--git-dir', fixture.remote, 'show', `main:${collectionPath('macbook')}`])).stdout, stableJson(peer));
+  const merged = JSON.parse((await run('git', ['--git-dir', fixture.remote, 'show', 'main:metrics/codex-activity.json'])).stdout);
+  assert.equal(merged.summary.toolCalls, 150);
+  assert.doesNotMatch(stableJson(merged), /sourceId|macbook|macmini|CANARY/);
+});
+
+test('direct collection publication MacBook changes only its collection even with both current inputs', async () => {
+  const fixture = await publisherRepo();
+  await seedCollections(fixture, makeV3Snapshot());
+  const { publishCollection } = await import('../../scripts/profile-activity/publish.mjs');
+  assert.equal(typeof publishCollection, 'function');
+  await publishCollection(fixture.config, makeV3Snapshot(), { now: options.referenceTime });
+  fixture.config.collectionSlot = 'macbook';
+  fixture.config.role = 'collector';
+  await publishCollection(fixture.config, makeV3Snapshot({ revision: 2, calls: 4 }), { now: options.referenceTime });
+  const changed = (await run('git', ['--git-dir', fixture.remote, 'diff-tree', '--no-commit-id', '--name-only', '-r', 'main'])).stdout.trim().split('\n');
+  assert.deepEqual(changed, [collectionPath('macbook')]);
+});
+
+test('direct collection publication preserves merged bytes when peer is missing stale malformed or legacy', async () => {
+  const { publishCollection } = await import('../../scripts/profile-activity/publish.mjs');
+  assert.equal(typeof publishCollection, 'function');
+  for (const peer of [null, makeV3Snapshot({ collectedAt: '2026-09-10T09:00:00Z' }), '{bad-json', insightSnapshot()]) {
+    const fixture = await publisherRepo();
+    await seedCollections(fixture, peer);
+    await publishCollection(fixture.config, makeV3Snapshot(), { now: options.referenceTime });
+    const changed = (await run('git', ['--git-dir', fixture.remote, 'diff-tree', '--no-commit-id', '--name-only', '-r', 'main'])).stdout.trim().split('\n');
+    assert.deepEqual(changed, [collectionPath('macmini')]);
+    for (const [name, bytes] of Object.entries(fixture.generated)) assert.equal((await run('git', ['--git-dir', fixture.remote, 'show', `main:${name}`])).stdout, bytes);
+  }
+});
+
+test('direct collection publication refetches and rerenders after non-fast-forward without recollecting', async () => {
+  const fixture = await publisherRepo();
+  await seedCollections(fixture, makeV3Snapshot({ calls: 1 }));
+  const { publishCollection } = await import('../../scripts/profile-activity/publish.mjs');
+  assert.equal(typeof publishCollection, 'function');
+  const other = path.join(fixture.root, 'other');
+  await run('git', ['clone', '-q', fixture.remote, other]);
+  await run('git', ['-C', other, 'config', 'user.name', 'Synthetic Test']);
+  await run('git', ['-C', other, 'config', 'user.email', 'test@example.invalid']);
+  const peer = makeV3Snapshot({ revision: 2, calls: 7 });
+  await writeFile(path.join(other, collectionPath('macbook')), stableJson(peer));
+  await writeFile(path.join(other, 'README.md'), 'preserve concurrent update\n');
+  await run('git', ['-C', other, 'add', '.']);
+  await run('git', ['-C', other, 'commit', '-m', 'concurrent peer']);
+  await run('git', ['-C', other, 'push', 'origin', 'HEAD:refs/heads/concurrent-test']);
+  const concurrent = (await run('git', ['-C', other, 'rev-parse', 'HEAD'])).stdout.trim();
+  const marker = path.join(fixture.root, 'once');
+  const hookContent = `#!/bin/sh\nif [ ! -e ${shellQuote(marker)} ]; then\n : > ${shellQuote(marker)}\n git --git-dir=${shellQuote(fixture.remote)} update-ref refs/heads/main ${shellQuote(concurrent)}\nfi\n`;
+  await writeFile(path.join(fixture.hooks, 'pre-push'), hookContent);
+  await chmod(path.join(fixture.hooks, 'pre-push'), 0o700);
+  approveHook(fixture.config, 'pre-push', hookContent);
+  await publishCollection(fixture.config, makeV3Snapshot({ calls: 3 }), { now: options.referenceTime });
+  const merged = JSON.parse((await run('git', ['--git-dir', fixture.remote, 'show', 'main:metrics/codex-activity.json'])).stdout);
+  assert.equal(merged.summary.toolCalls, 300);
+  assert.equal((await run('git', ['--git-dir', fixture.remote, 'show', `main:${collectionPath('macbook')}`])).stdout, stableJson(peer));
+  assert.equal((await run('git', ['--git-dir', fixture.remote, 'show', 'main:README.md'])).stdout, 'preserve concurrent update\n');
+
+  const installed = await installedPublisherFixture();
+  await configureInstalledPublication(installed, fixture, 'macmini');
+  await writeFile(path.join(installed.stateDir, 'snapshot.json'), stableJson(makeV3Snapshot({ revision: 5 })));
+  const current = (await run('git', ['--git-dir', fixture.remote, 'rev-parse', 'main'])).stdout.trim();
+  await run('git', ['-C', other, 'fetch', 'origin', 'main']);
+  await run('git', ['-C', other, 'checkout', '--detach', current]);
+  await writeFile(path.join(other, 'README.md'), 'second concurrent update\n');
+  await run('git', ['-C', other, 'commit', '-am', 'second race']);
+  await run('git', ['-C', other, 'push', 'origin', 'HEAD:refs/heads/concurrent-test']);
+  const next = (await run('git', ['-C', other, 'rev-parse', 'HEAD'])).stdout.trim();
+  const secondHook = hookContent.replaceAll(marker, `${marker}-second`).replace(concurrent, next);
+  await writeFile(path.join(fixture.hooks, 'pre-push'), secondHook);
+  approveHook(fixture.config, 'pre-push', secondHook);
+  await configureInstalledPublication(installed, fixture, 'macmini');
+  assert.equal(deliveryExecution.createInstalledCliInvocation({ receiptFile: installed.receiptFile, command: 'run' }).run().status, 'published');
+  assert.equal((await readSnapshot(path.join(installed.stateDir, 'snapshot.json'), installed.stateDir)).revision, 6);
+  assert.equal((await run('git', ['--git-dir', fixture.remote, 'show', 'main:README.md'])).stdout, 'second concurrent update\n');
+});
 
 function approveHook(config, name, content, mode = 0o700) {
   config.publisher.hooksManifest[name] = { digest: createHash('sha256').update(content).digest('hex'), mode };
@@ -226,13 +375,13 @@ test('v3 schema rejects wrong ranges, denominators, extras, and identifiers', ()
   assert.throws(() => parsePrivateSnapshot(chats), /newChats/);
 });
 
-test('v3 snapshot and envelope omit source identity while merge keeps private slot context', () => {
+test('v3 snapshot and collection omit source identity while merge keeps private slot context', () => {
   const a = makeV3Snapshot();
   const b = makeV3Snapshot();
   const parsed = parsePrivateSnapshot(a);
-  const envelope = createEnvelope(a);
+  const collection = createRepositoryCollection(a);
   assert.equal(Object.hasOwn(parsed, 'sourceId'), false);
-  assert.doesNotMatch(stableJson(envelope), /sourceId|11111111|22222222/);
+  assert.doesNotMatch(stableJson(collection), /sourceId|11111111|22222222/);
   assert.equal(aggregateSnapshots([{ sourceId: SOURCE_A, snapshot: a }, { sourceId: SOURCE_B, snapshot: b }], options).schemaVersion, 3);
   assert.throws(() => aggregateSnapshots([a, b], options), /unregistered source/);
   assert.throws(() => chooseLatestSnapshots([{ sourceId: SOURCE_B, snapshot: makeSnapshot() }], [SOURCE_A, SOURCE_B]), /mismatch/);
@@ -399,6 +548,7 @@ test('account usage rejects identifiers, billing metadata, raw responses, extras
 
 test('installed run accepts one private account sample without exposing it in CLI output', async () => {
   const fixture = await installedPublisherFixture();
+  await configureInstalledPublication(fixture, await publisherRepo(), 'macmini');
   const sample = {
     observedAt: '2026-09-13T09:00:00.000Z',
     window: { durationMinutes: 300, usedPercent: 42.5, resetsAt: '2026-09-13T12:00:00.000Z' },
@@ -410,65 +560,6 @@ test('installed run accepts one private account sample without exposing it in CL
   assert.throws(() => deliveryExecution.createInstalledCliInvocation({ receiptFile: fixture.receiptFile, command: 'run', input: { ...sample, accountId: 'PRIVATE-CANARY' } }).run());
 });
 
-test('v3 envelope uses a version-matched schema and retains no category identity', () => {
-  const snapshot = makeV3Snapshot({ calls: 1, pluginCalls: 1, skillUses: 1 });
-  const envelope = createEnvelope(snapshot);
-  assert.equal(envelope.schema, 'PROFILE_ACTIVITY_SNAPSHOT_V3');
-  assert.deepEqual(Object.keys(envelope).sort(), ['revision', 'schema', 'snapshot']);
-  assert.equal(parseEnvelope(envelope).snapshot.schemaVersion, 3);
-  assert.throws(() => parseEnvelope({ ...envelope, schema: 'PROFILE_ACTIVITY_SNAPSHOT_V2' }), /identity/);
-  assert.doesNotMatch(stableJson(envelope), /PRIVATE|pluginName|pluginId|skillName|modelName|arguments/);
-});
-
-test('v3 publication accepts matching current v2 or v3 pairs and waits on mixed or stale pairs', () => {
-  const now = '2026-09-13T05:00:00.000Z';
-  const v2 = [insightSnapshot({ collectedAt: '2026-09-13T04:00:00.000Z' }), insightSnapshot({ sourceId: SOURCE_B, collectedAt: '2026-09-13T04:00:00.000Z' })];
-  const v3 = [makeV3Input({ collectedAt: '2026-09-13T04:00:00.000Z' }), makeV3Input({ sourceId: SOURCE_B, collectedAt: '2026-09-13T04:00:00.000Z' })];
-  assert.equal(publicationDecision({ snapshots: v2, expectedSourceIds: [SOURCE_A, SOURCE_B], now, receipt: null }).status, 'ready');
-  assert.equal(publicationDecision({ snapshots: v3, expectedSourceIds: [SOURCE_A, SOURCE_B], now, receipt: null }).status, 'ready');
-  assert.equal(publicationDecision({ snapshots: [v2[0], v3[1]], expectedSourceIds: [SOURCE_A, SOURCE_B], now, receipt: null }).status, 'awaiting-source');
-  const stale = v3.map(({ sourceId, snapshot }) => ({ sourceId, snapshot: { ...snapshot, collectedAt: '2026-09-10T04:00:00.000Z' } }));
-  assert.equal(publicationDecision({ snapshots: stale, expectedSourceIds: [SOURCE_A, SOURCE_B], now, receipt: null }).status, 'awaiting-source');
-});
-
-test('v3 preservation refuses missing, conflicting, and malformed inputs before publication', async () => {
-  const root = await temp();
-  let publishes = 0;
-  const result = await publishIfReady({
-    config: { stateDir: root }, snapshots: [makeV3Input({ collectedAt: '2026-09-13T04:00:00.000Z' })], expectedSourceIds: [SOURCE_A, SOURCE_B], now: '2026-09-13T05:00:00.000Z',
-    receiptFile: path.join(root, 'publication-receipt.json'), publish: async () => { publishes += 1; return { status: 'published', commit: 'a'.repeat(40) }; },
-  });
-  assert.equal(result.status, 'awaiting-source');
-  assert.equal(publishes, 0);
-  assert.throws(() => publicationDecision({
-    snapshots: [makeV3Input(), makeV3Input({ calls: 1, pluginCalls: 1 }), makeV3Input({ sourceId: SOURCE_B })],
-    expectedSourceIds: [SOURCE_A, SOURCE_B], now: '2026-09-13T05:00:00.000Z', receipt: null,
-  }), /conflict/);
-  const malformed = makeV3Snapshot({ sourceId: SOURCE_B });
-  malformed.days[0].privateCanary = 'PRIVATE-CANARY';
-  assert.throws(() => publicationDecision({ snapshots: [makeV3Input(), { sourceId: SOURCE_B, snapshot: malformed }], expectedSourceIds: [SOURCE_A, SOURCE_B], now: '2026-09-13T05:00:00.000Z', receipt: null }), /keys/);
-  await assert.rejects(readFile(path.join(root, 'publication-receipt.json'), 'utf8'));
-});
-
-test('v3 processing run reads stored snapshots without collecting a device', async () => {
-  const fixture = await installedPublisherFixture();
-  const local = makeV3Snapshot({ sourceId: SOURCE_B, revision: 5 });
-  await writeFile(path.join(fixture.stateDir, 'snapshot.json'), stableJson(local));
-  const result = JSON.parse((await run(process.execPath, [fixture.cli, 'run', '--config', fixture.config, '--as-of', '2026-09-13'])).stdout);
-  assert.ok(['before-window', 'awaiting-source'].includes(result.status));
-  assert.equal((await readSnapshot(path.join(fixture.stateDir, 'snapshot.json'), fixture.stateDir)).revision, 5);
-  assert.deepEqual(await readdir(path.join(fixture.root, 'logs')), []);
-});
-
-test('v3 processing refuses malformed last-good instead of falling back to transport', async () => {
-  const fixture = await installedPublisherFixture();
-  await writeFile(path.join(fixture.stateDir, 'snapshot.json'), stableJson(makeV3Snapshot()));
-  await writeFile(path.join(fixture.stateDir, `last-good-${SOURCE_A}.json`), '{"schemaVersion":3}\n');
-  await writeFile(path.join(fixture.root, 'remote.json'), stableJson(makeV3Snapshot()));
-  await assert.rejects(run(process.execPath, [fixture.cli, 'run', '--config', fixture.config, '--as-of', '2026-09-13']));
-  await assert.rejects(readFile(path.join(fixture.stateDir, 'publication-receipt.json'), 'utf8'));
-});
-
 test('v3 collection migrates an untransmitted identified draft without resetting revision', async () => {
   const fixture = await installedCollectorFixture();
   await writeFile(path.join(fixture.stateDir, 'snapshot.json'), stableJson({ ...makeV3Snapshot({ revision: 5 }), sourceId: SOURCE_A }));
@@ -478,189 +569,19 @@ test('v3 collection migrates an untransmitted identified draft without resetting
   assert.equal(Object.hasOwn(stored, 'sourceId'), false);
 });
 
-test('v3 receiver binds a source-less envelope to its configured private slot', async () => {
-  const root = await temp();
-  const file = path.join(root, 'last-good.json');
-  const envelope = createEnvelope(makeV3Snapshot());
-  const received = await receiveEnvelope({ envelope, expectedSourceId: SOURCE_A, lastGoodFile: file, stateScope: root });
-  assert.deepEqual(received, { status: 'received', revision: envelope.revision });
-  assert.doesNotMatch(await readFile(file, 'utf8'), /sourceId|11111111|22222222/);
-  assert.deepEqual(await receiveEnvelope({ envelope, expectedSourceId: SOURCE_A, lastGoodFile: file, stateScope: root }), { status: 'acknowledged', revision: envelope.revision });
-});
-
-test('v3 acknowledgement uses revision without a stable digest', () => {
-  const delivery = nextDelivery({ snapshot: makeV3Snapshot(), state: null, date: '2026-09-20' });
-  assert.equal(Object.hasOwn(delivery.envelope, 'digest'), false);
-  const state = acceptAcknowledgement({ acknowledgement: { status: 'received', revision: delivery.envelope.revision }, state: delivery.state });
-  assert.equal(nextDelivery({ snapshot: makeV3Snapshot({ revision: 2 }), state, date: '2026-09-20' }).status, 'acknowledged');
-});
-
-test('T50 envelope digest is metadata and verifies canonical snapshot bytes', () => {
-  const snapshot = insightSnapshot();
-  const envelope = createEnvelope(snapshot);
-  assert.deepEqual(Object.keys(envelope).sort(), ['digest', 'revision', 'schema', 'snapshot']);
-  assert.equal(envelope.schema, 'PROFILE_ACTIVITY_SNAPSHOT_V2');
-  assert.equal(envelope.revision, snapshot.revision);
-  assert.deepEqual(parseEnvelope(envelope).snapshot, snapshot);
-  assert.throws(() => parseEnvelope({ ...envelope, digest: '0'.repeat(64) }), /digest mismatch/);
-});
-
-test('T51 receiver is idempotent and rejects rollback and conflict', async () => {
-  const root = await temp();
-  const file = path.join(root, 'last-good.json');
-  const first = createEnvelope(insightSnapshot({ revision: 2 }));
-  assert.equal((await receiveEnvelope({ envelope: first, expectedSourceId: SOURCE_A, lastGoodFile: file, stateScope: root })).status, 'received');
-  assert.equal((await receiveEnvelope({ envelope: first, expectedSourceId: SOURCE_A, lastGoodFile: file, stateScope: root })).status, 'acknowledged');
-  await assert.rejects(receiveEnvelope({ envelope: createEnvelope(insightSnapshot({ revision: 1 })), expectedSourceId: SOURCE_A, lastGoodFile: file, stateScope: root }), /rollback/);
-  await assert.rejects(receiveEnvelope({ envelope: createEnvelope(insightSnapshot({ revision: 2, calls: 9 })), expectedSourceId: SOURCE_A, lastGoodFile: file, stateScope: root }), /conflict/);
-  assert.equal((await readSnapshot(file, root)).revision, 2);
-});
-
-test('T52 sender retries one revision four times and stops until acknowledgement', () => {
-  const snapshot = insightSnapshot({ revision: 7 });
-  let state = null;
-  for (let attempt = 1; attempt <= 4; attempt += 1) {
-    const result = nextDelivery({ snapshot, state, date: '2026-09-19' });
-    assert.equal(result.status, 'send');
-    assert.equal(result.state.attempts, attempt);
-    state = result.state;
-  }
-  assert.equal(nextDelivery({ snapshot, state, date: '2026-09-19' }).status, 'retry-exhausted');
-  const acknowledgement = { status: 'received', revision: 7, digest: createEnvelope(snapshot).digest };
-  const accepted = acceptAcknowledgement({ acknowledgement, state });
-  assert.equal(accepted.acknowledgedRevision, 7);
-  assert.equal(nextDelivery({ snapshot, state: accepted, date: '2026-09-19' }).status, 'acknowledged');
-});
-
-test('T53 sender restart preserves the pending envelope and a new date resets it', () => {
-  const oldSnapshot = insightSnapshot({ revision: 7 });
-  const first = nextDelivery({ snapshot: oldSnapshot, state: null, date: '2026-09-19' });
-  const restored = JSON.parse(stableJson(first.state));
-  const nextSnapshot = insightSnapshot({ revision: 8 });
-  const retry = nextDelivery({ snapshot: nextSnapshot, state: restored, date: '2026-09-19' });
-  assert.deepEqual(retry.envelope, first.envelope);
-  assert.equal(retry.state.attempts, 2);
-  const nextDate = nextDelivery({ snapshot: nextSnapshot, state: restored, date: '2026-09-20' });
-  assert.equal(nextDate.envelope.revision, 8);
-  assert.equal(nextDate.state.attempts, 1);
-});
-
-test('T54 publication gate waits before 08:00 and becomes ready at 08:00 KST', () => {
-  const snapshots = [
-    insightSnapshot({ collectedAt: '2026-09-12T22:00:00.000Z' }),
-    insightSnapshot({ sourceId: SOURCE_B, collectedAt: '2026-09-12T22:00:00.000Z' }),
-  ];
-  assert.equal(publicationDecision({ snapshots, expectedSourceIds: [SOURCE_A, SOURCE_B], now: '2026-09-12T22:59:59Z', receipt: null }).status, 'before-window');
-  assert.equal(publicationDecision({ snapshots, expectedSourceIds: [SOURCE_A, SOURCE_B], now: '2026-09-12T23:00:00Z', receipt: null }).status, 'ready');
-});
-
-test('T55 publication gate skips stale input and same-date repeats', () => {
-  const current = insightSnapshot({ collectedAt: '2026-09-13T04:00:00.000Z' });
-  const legacy = makeSnapshot({ sourceId: SOURCE_B, collectedAt: '2026-09-13T04:00:00.000Z' });
-  assert.equal(publicationDecision({ snapshots: [current, legacy], expectedSourceIds: [SOURCE_A, SOURCE_B], now: '2026-09-13T05:00:00Z', receipt: null }).status, 'awaiting-source');
-  const receipt = publicationReceipt({ date: '2026-09-13', result: { status: 'published', commit: 'a'.repeat(40) } });
-  assert.equal(publicationDecision({ snapshots: [current, insightSnapshot({ sourceId: SOURCE_B, collectedAt: '2026-09-13T04:00:00.000Z' })], expectedSourceIds: [SOURCE_A, SOURCE_B], now: '2026-09-13T05:00:00Z', receipt }).status, 'already-published');
-});
-
-test('T56 installed outbox and acknowledge persist private sender state', async () => {
-  const fixture = await installedCollectorFixture();
-  await writeFile(path.join(fixture.stateDir, 'snapshot.json'), stableJson(insightSnapshot()));
-  const first = JSON.parse((await run(process.execPath, [fixture.cli, 'outbox', '--config', fixture.config])).stdout);
-  assert.equal(first.status, 'send');
-  assert.equal(first.envelope.schema, 'PROFILE_ACTIVITY_SNAPSHOT_V2');
-  const acknowledged = JSON.parse((await runWithInput(process.execPath, [fixture.cli, 'acknowledge', '--config', fixture.config], stableJson({ status: 'received', revision: first.envelope.revision, digest: first.envelope.digest }))).stdout);
-  assert.equal(acknowledged.status, 'acknowledged');
-  assert.equal(JSON.parse((await run(process.execPath, [fixture.cli, 'outbox', '--config', fixture.config])).stdout).status, 'acknowledged');
-});
-
-test('T59 installed acknowledge uses one non-TTY execFile input and exact JSON output', async () => {
-  const fixture = await installedCollectorFixture();
-  await writeFile(path.join(fixture.stateDir, 'snapshot.json'), stableJson(insightSnapshot()));
-  const first = JSON.parse((await run(process.execPath, [fixture.cli, 'outbox', '--config', fixture.config])).stdout);
-  const invocation = deliveryExecution.createInstalledCliInvocation({
-    receiptFile: fixture.receiptFile,
-    command: 'acknowledge',
-    input: { status: 'received', revision: first.envelope.revision, digest: first.envelope.digest },
-    pendingEnvelope: first.envelope,
-  });
-
-  assert.equal(invocation.run().status, 'acknowledged');
-  assert.throws(() => invocation.run(), /already started/);
-  assert.equal(JSON.parse((await run(process.execPath, [fixture.cli, 'outbox', '--config', fixture.config])).stdout).status, 'acknowledged');
-});
-
-test('T60 delivery CLI output and acknowledgement shapes are exact', () => {
-  const envelope = createEnvelope(insightSnapshot());
-  const acknowledgement = { status: 'received', revision: envelope.revision, digest: envelope.digest };
-  assert.equal(deliveryExecution.parseDeliveryCliOutput('receive', stableJson(acknowledgement), envelope).status, 'received');
-  assert.throws(() => deliveryExecution.parseDeliveryCliOutput('receive', stableJson({ ...acknowledgement, extra: true }), envelope), /keys/);
-  assert.throws(() => deliveryExecution.parseDeliveryCliOutput('receive', '{"status":"received"}', envelope));
-  assert.throws(() => acceptAcknowledgement({ acknowledgement: { ...acknowledgement, extra: true }, state: nextDelivery({ snapshot: envelope.snapshot, state: null, date: '2026-09-19' }).state }), /keys/);
-});
-
 test('T61 delivery failures preserve only structured sanitized evidence', () => {
   const evidence = deliveryExecution.failureEvidence({
-    stage: 'acknowledge',
+    stage: 'run',
     error: Object.assign(new Error('PRIVATE-PATH-CANARY PRIVATE-DIGEST-CANARY'), { code: 'EACCES' }),
     stateChanged: false,
   });
-  assert.deepEqual(evidence, { status: 'error', stage: 'acknowledge', exitCode: null, signal: null, errorClass: 'permission', stderrClass: 'permission-denied', stateChanged: false });
+  assert.deepEqual(evidence, { status: 'error', stage: 'run', exitCode: null, signal: null, errorClass: 'permission', stderrClass: 'permission-denied', stateChanged: false });
   assert.doesNotMatch(stableJson(evidence), /PRIVATE|PATH|DIGEST/);
 });
 
 test('T62 retry approval is not accepted as forgeable invocation data', async () => {
   const fixture = await installedCollectorFixture();
-  assert.throws(() => deliveryExecution.createInstalledCliInvocation({ receiptFile: fixture.receiptFile, command: 'outbox', previousFailure: { stage: 'outbox' }, authority: { kind: 'user', retryApproved: true } }), /invalid invocation keys/);
-});
-
-test('T63 CLI failures emit structured sanitized evidence at the command stage', async () => {
-  const fixture = await installedCollectorFixture();
-  await writeFile(path.join(fixture.stateDir, 'snapshot.json'), stableJson(insightSnapshot()));
-  await run(process.execPath, [fixture.cli, 'outbox', '--config', fixture.config]);
-  await assert.rejects(
-    runWithInput(process.execPath, [fixture.cli, 'acknowledge', '--config', fixture.config], stableJson({ status: 'received', extra: 'PRIVATE-PATH-CANARY' })),
-    (error) => {
-      const evidence = JSON.parse(error.stderr);
-      assert.deepEqual(evidence, { status: 'error', stage: 'acknowledge', exitCode: 1, signal: null, errorClass: 'validation', stderrClass: 'validation-rejected', stateChanged: false });
-      assert.doesNotMatch(error.stderr, /PRIVATE|PATH|CANARY/);
-      return true;
-    },
-  );
-});
-
-test('T64 invocation preserves the CLI sanitized failure without raw subprocess output', async () => {
-  const fixture = await installedCollectorFixture();
-  await writeFile(path.join(fixture.stateDir, 'snapshot.json'), stableJson(insightSnapshot()));
-  const first = JSON.parse((await run(process.execPath, [fixture.cli, 'outbox', '--config', fixture.config])).stdout);
-  const invocation = deliveryExecution.createInstalledCliInvocation({
-    receiptFile: fixture.receiptFile,
-    command: 'acknowledge',
-    input: { status: 'received', revision: first.envelope.revision, digest: first.envelope.digest, extra: 'PRIVATE-PATH-CANARY' },
-    pendingEnvelope: first.envelope,
-  });
-  assert.throws(() => invocation.run(), (error) => {
-    assert.deepEqual(error.evidence, { status: 'error', stage: 'acknowledge', exitCode: 1, signal: null, errorClass: 'validation', stderrClass: 'validation-rejected', stateChanged: false });
-    assert.equal(Object.hasOwn(error, 'stderr'), false);
-    assert.equal(Object.hasOwn(error, 'stdout'), false);
-    return true;
-  });
-});
-
-test('T65 installed delivery entrypoint acknowledges through receipt-pinned Node', async () => {
-  const fixture = await installedCollectorFixture();
-  await writeFile(path.join(fixture.stateDir, 'snapshot.json'), stableJson(insightSnapshot()));
-  const first = JSON.parse((await run(process.execPath, [fixture.cli, 'outbox', '--config', fixture.config])).stdout);
-  const result = JSON.parse((await runWithInput(process.execPath, [fixture.delivery, 'acknowledge', '--receipt', fixture.receiptFile], stableJson({ status: 'received', revision: first.envelope.revision, digest: first.envelope.digest }))).stdout);
-  assert.equal(result.status, 'acknowledged');
-});
-
-test('T66 receiver entrypoint runs receive then one gated publication check', async () => {
-  const fixture = await installedPublisherFixture();
-  const envelope = createEnvelope(insightSnapshot({ sourceId: SOURCE_A }));
-  const result = JSON.parse((await runWithInput(process.execPath, [fixture.delivery, 'receive-run', '--receipt', fixture.receiptFile], stableJson(envelope))).stdout);
-  assert.deepEqual(result.acknowledgement, { status: 'received', revision: envelope.revision, digest: envelope.digest });
-  assert.ok(['before-window', 'awaiting-source'].includes(result.publication.status));
-  assert.equal((await readSnapshot(path.join(fixture.stateDir, `last-good-${SOURCE_A}.json`), fixture.stateDir)).revision, envelope.revision);
+  assert.throws(() => deliveryExecution.createInstalledCliInvocation({ receiptFile: fixture.receiptFile, command: 'run', previousFailure: { stage: 'run' }, authority: { kind: 'user', retryApproved: true } }), /invalid invocation keys/);
 });
 
 test('T67 delivery errors preserve non-default exit status and signal fields', () => {
@@ -670,8 +591,8 @@ test('T67 delivery errors preserve non-default exit status and signal fields', (
 
 test('T68 CLI startup validation is distinct from runtime integrity failure', async () => {
   const fixture = await installedCollectorFixture();
-  await assert.rejects(run(process.execPath, [fixture.cli, 'outbox']), (error) => {
-    assert.deepEqual(JSON.parse(error.stderr), { status: 'error', stage: 'outbox', exitCode: 1, signal: null, errorClass: 'validation', stderrClass: 'validation-rejected', stateChanged: false });
+  await assert.rejects(run(process.execPath, [fixture.cli, 'run']), (error) => {
+    assert.deepEqual(JSON.parse(error.stderr), { status: 'error', stage: 'run', exitCode: 1, signal: null, errorClass: 'validation', stderrClass: 'validation-rejected', stateChanged: false });
     return true;
   });
 });
@@ -693,36 +614,6 @@ test('T70 multi-write collection failure reports state change as unknown', async
     assert.equal(JSON.parse(error.stderr).stateChanged, 'unknown');
     return true;
   });
-});
-
-test('T71 publisher run processes stored device snapshots without collecting either scope', async () => {
-  const fixture = await installedPublisherFixture();
-  const local = insightSnapshot({ sourceId: SOURCE_B, revision: 5 });
-  await writeFile(path.join(fixture.stateDir, 'snapshot.json'), stableJson(local));
-  const result = JSON.parse((await run(process.execPath, [fixture.cli, 'run', '--config', fixture.config, '--as-of', '2026-09-13'])).stdout);
-  assert.ok(['before-window', 'awaiting-source'].includes(result.status));
-  assert.equal((await readSnapshot(path.join(fixture.stateDir, 'snapshot.json'), fixture.stateDir)).revision, 5);
-});
-
-test('T57 receive-triggered and 08:00 gates publish at most once', async () => {
-  const root = await temp();
-  const snapshots = [
-    insightSnapshot({ collectedAt: '2026-09-13T04:00:00.000Z' }),
-    insightSnapshot({ sourceId: SOURCE_B, collectedAt: '2026-09-13T04:00:00.000Z' }),
-  ];
-  let publishes = 0;
-  const invoke = () => publishIfReady({
-    config: { stateDir: root }, snapshots, expectedSourceIds: [SOURCE_A, SOURCE_B], now: '2026-09-13T05:00:00.000Z', receiptFile: path.join(root, 'publication-receipt.json'),
-    publish: async () => {
-      publishes += 1;
-      await new Promise((resolve) => setImmediate(resolve));
-      return { status: 'published', commit: 'a'.repeat(40) };
-    },
-  });
-  const results = await Promise.all([invoke(), invoke()]);
-  assert.equal(results.filter(({ status }) => status === 'published').length, 1);
-  assert.ok(results.every(({ status }) => ['published', 'skipped-lock', 'already-published'].includes(status)));
-  assert.equal(publishes, 1);
 });
 
 test('T58 collector plist runs at login and every 15 minutes without wake controls', async () => {
@@ -1109,7 +1000,7 @@ test('T32 non-fast-forward retry starts from the new remote and preserves README
   assert.equal((await run('git', ['--git-dir', fixture.remote, 'show', 'main:metrics/codex-activity.json'])).stdout, '{}\n');
 });
 
-test('T33 failed pushes stop after the configured retry bound', async () => {
+test('T33 failed pushes without a remote advance stop after one attempt', async () => {
   const fixture = await publisherRepo();
   const countFile = path.join(fixture.root, 'attempts');
   const hook = path.join(fixture.hooks, 'pre-push');
@@ -1118,7 +1009,7 @@ test('T33 failed pushes stop after the configured retry bound', async () => {
   await chmod(hook, 0o700);
   approveHook(fixture.config, 'pre-push', hookContent);
   await assert.rejects(publishGenerated(fixture.config, fixture.generated));
-  assert.equal((await readFile(countFile, 'utf8')).length, 3);
+  assert.equal((await readFile(countFile, 'utf8')).length, 1);
 });
 
 test('T34 unchanged generated files create no empty commit', async () => {

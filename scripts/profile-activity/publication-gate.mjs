@@ -1,57 +1,27 @@
-import { readFile } from 'node:fs/promises';
-import { parseDate } from './contract.mjs';
-import { withPublisherLock } from './publish.mjs';
-import { atomicWrite, chooseLatestSnapshots } from './snapshot.mjs';
+import path from 'node:path';
+import { readSnapshot } from './snapshot.mjs';
+import { collectionPath } from './collection.mjs';
+import { parseRepositoryCollection } from './contract.mjs';
+
+export async function repositoryCollectionDecision({ repo, collection, now, staleAfterHours = 36 }) {
+  const clock = kstParts(now);
+  let peer;
+  try {
+    peer = parseRepositoryCollection(await readSnapshot(path.join(repo, collectionPath('macbook')), repo));
+  } catch (error) {
+    if (error.code && error.code !== 'ENOENT' || /symlink|escaped/.test(error.message)) throw error;
+    return { status: 'awaiting-source', date: clock.date };
+  }
+  const snapshots = [{ sourceId: 'macbook', snapshot: peer }, { sourceId: 'macmini', snapshot: collection }];
+  if (snapshots.some(({ snapshot }) => snapshot.window.to !== clock.date || new Date(snapshot.collectedAt) > clock.instant || clock.instant - new Date(snapshot.collectedAt) > staleAfterHours * 3600000)) return { status: 'awaiting-source', date: clock.date };
+  return { status: 'ready', date: clock.date, snapshots };
+}
 
 function kstParts(value) {
   const instant = new Date(value);
   if (Number.isNaN(instant.valueOf())) throw new Error('invalid publication time');
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+    timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
   }).formatToParts(instant).filter(({ type }) => type !== 'literal').map(({ type, value: part }) => [type, part]));
-  return { instant, date: `${parts.year}-${parts.month}-${parts.day}`, hour: Number(parts.hour), minute: Number(parts.minute), second: Number(parts.second) };
-}
-
-function parseReceipt(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid publication receipt');
-  if (Object.keys(value).sort().join(',') !== 'commit,date,schemaVersion,status') throw new Error('invalid publication receipt keys');
-  if (value.schemaVersion !== 1 || !['published', 'no-op'].includes(value.status)) throw new Error('invalid publication receipt');
-  const date = parseDate(value.date, 'receipt date');
-  if (value.commit !== null && (typeof value.commit !== 'string' || !/^[0-9a-f]{40}$/.test(value.commit))) throw new Error('invalid publication commit');
-  return { schemaVersion: 1, date, status: value.status, commit: value.commit };
-}
-
-export function publicationDecision({ snapshots, expectedSourceIds, now, receipt, staleAfterHours = 36 }) {
-  const clock = kstParts(now);
-  if (clock.hour < 8) return { status: 'before-window', date: clock.date };
-  if (receipt && parseReceipt(receipt).date === clock.date) return { status: 'already-published', date: clock.date };
-  const selected = chooseLatestSnapshots(snapshots, expectedSourceIds);
-  const selectedSnapshots = selected.map(({ snapshot }) => snapshot);
-  const versions = new Set(selectedSnapshots.map(({ schemaVersion }) => schemaVersion));
-  if (selected.length !== expectedSourceIds.length || versions.size !== 1 || ![2, 3].includes(selectedSnapshots[0]?.schemaVersion) || selectedSnapshots.some((snapshot) => snapshot.window.to !== clock.date)) return { status: 'awaiting-source', date: clock.date };
-  if (selectedSnapshots.some((snapshot) => new Date(snapshot.collectedAt) > clock.instant)) throw new Error('future snapshot');
-  if (selectedSnapshots.some((snapshot) => clock.instant - new Date(snapshot.collectedAt) > staleAfterHours * 3600000)) return { status: 'awaiting-source', date: clock.date };
-  return { status: 'ready', date: clock.date, snapshots: selected };
-}
-
-export function publicationReceipt({ date, result }) {
-  parseDate(date, 'receipt date');
-  if (!result || !['published', 'no-op'].includes(result.status)) throw new Error('invalid publication result');
-  const commit = result.commit ?? null;
-  if (commit !== null && (typeof commit !== 'string' || !/^[0-9a-f]{40}$/.test(commit))) throw new Error('invalid publication commit');
-  return { schemaVersion: 1, date, status: result.status, commit };
-}
-
-export async function publishIfReady({ config, snapshots, expectedSourceIds, now, receiptFile, publish }) {
-  return withPublisherLock(config.stateDir, async () => {
-    let receipt = null;
-    try { receipt = JSON.parse(await readFile(receiptFile, 'utf8')); } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
-    }
-    const decision = publicationDecision({ snapshots, expectedSourceIds, now, receipt, staleAfterHours: config.staleAfterHours });
-    if (decision.status !== 'ready') return decision;
-    const result = await publish(decision.snapshots);
-    await atomicWrite(receiptFile, publicationReceipt({ date: decision.date, result }), config.stateDir);
-    return result;
-  });
+  return { instant, date: `${parts.year}-${parts.month}-${parts.day}` };
 }

@@ -4,6 +4,11 @@ import { lstat, mkdir, readFile, readdir, realpath, rm, writeFile } from 'node:f
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { atomicWrite, prepareWriteTarget } from './snapshot.mjs';
+import { collectionPath, createRepositoryCollection } from './collection.mjs';
+import { stableJson } from './contract.mjs';
+import { repositoryCollectionDecision } from './publication-gate.mjs';
+import { processActivitySurface } from './account-usage.mjs';
+import { renderActivitySvg } from './render.mjs';
 
 const run = promisify(execFile);
 export const GENERATED_PATHS = ['assets/codex-activity.svg', 'metrics/codex-activity.json'];
@@ -68,9 +73,9 @@ export async function withPublisherLock(lockRoot, action) {
   }
 }
 
-export function assertAllowedPaths(paths) {
+export function assertAllowedPaths(paths, allowed = GENERATED_PATHS) {
   const unique = [...new Set(paths)].sort();
-  if (unique.some((item) => !GENERATED_PATHS.includes(item))) throw new Error('publish path outside allowlist');
+  if (unique.some((item) => !allowed.includes(item))) throw new Error('publish path outside allowlist');
 }
 
 export async function verifyRuntimeManifest(runtimeDir, manifest) {
@@ -89,7 +94,7 @@ export async function verifyRuntimeManifest(runtimeDir, manifest) {
 }
 
 export async function validatePublisherTarget(config) {
-  if (config.role !== 'publisher' || !config.publisher) throw new Error('publisher role required');
+  if (!config.publisher || !(config.role === 'publisher' || config.role === 'collector' && config.collectionSlot === 'macbook')) throw new Error('publisher role required');
   const repo = await realpath(config.publisher.repoDir);
   if (await git(repo, ['rev-parse', '--show-toplevel']) !== repo) throw new Error('invalid publisher repository');
   const remote = await git(repo, ['remote', 'get-url', '--push', 'origin']);
@@ -101,30 +106,33 @@ export async function validatePublisherTarget(config) {
 }
 
 async function writeGenerated(candidate, generated) {
-  for (const relative of GENERATED_PATHS) await prepareWriteTarget(path.join(candidate, relative), candidate);
-  for (const relative of GENERATED_PATHS) {
+  for (const relative of Object.keys(generated)) await prepareWriteTarget(path.join(candidate, relative), candidate);
+  for (const relative of Object.keys(generated)) {
     const target = path.join(candidate, relative);
     await atomicWrite(target, generated[relative], candidate);
   }
 }
 
-export async function publishGeneratedUnlocked(config, generated, { dryRun = false } = {}) {
+async function publishFilesUnlocked(config, prepare, allowed, { dryRun = false } = {}) {
   const repo = await validatePublisherTarget(config);
-  if (dryRun) return { status: 'dry-run', paths: GENERATED_PATHS };
+  if (dryRun) return { status: 'dry-run', paths: allowed };
   const attempts = Math.min(3, (config.publisher.retryLimit ?? 2) + 1);
   let lastError;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const candidate = path.join(config.publisher.candidateRoot, `candidate-${randomUUID()}`);
     let committed = false;
+    let nonFastForward = false;
     try {
       await verifyPublisherHooks(repo, config.publisher.hooksManifest);
       await git(repo, ['fetch', 'origin', config.publisher.branch]);
       await verifyPublisherHooks(repo, config.publisher.hooksManifest);
       await git(repo, ['worktree', 'add', '--detach', candidate, `origin/${config.publisher.branch}`]);
+      const generated = await prepare(candidate);
+      assertAllowedPaths(Object.keys(generated), allowed);
       await writeGenerated(candidate, generated);
-      await git(candidate, ['add', '--', ...GENERATED_PATHS]);
+      await git(candidate, ['add', '--', ...Object.keys(generated)]);
       const staged = (await git(candidate, ['diff', '--cached', '--name-only'])).split('\n').filter(Boolean);
-      assertAllowedPaths(staged);
+      assertAllowedPaths(staged, allowed);
       if (staged.length === 0) {
         await git(repo, ['worktree', 'remove', candidate]);
         return { status: 'no-op' };
@@ -133,9 +141,14 @@ export async function publishGeneratedUnlocked(config, generated, { dryRun = fal
       await git(candidate, ['commit', '-m', 'chore(profile): refresh activity metrics']);
       committed = true;
       const commit = await git(candidate, ['rev-parse', 'HEAD']);
-      assertAllowedPaths((await git(candidate, ['diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD'])).split('\n').filter(Boolean));
+      assertAllowedPaths((await git(candidate, ['diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD'])).split('\n').filter(Boolean), allowed);
       await verifyPublisherHooks(repo, config.publisher.hooksManifest);
-      await git(candidate, ['push', 'origin', `HEAD:refs/heads/${config.publisher.branch}`]);
+      try {
+        await git(candidate, ['push', '--porcelain', 'origin', `HEAD:refs/heads/${config.publisher.branch}`]);
+      } catch (error) {
+        nonFastForward = /\[(?:rejected|remote rejected)\].*\((?:non-fast-forward|fetch first|failed to update ref|incorrect old value provided)\)/.test(`${error.stdout ?? ''}\n${error.stderr ?? ''}`);
+        throw error;
+      }
       await verifyPublisherHooks(repo, config.publisher.hooksManifest);
       await git(candidate, ['fetch', 'origin', config.publisher.branch]);
       await git(candidate, ['merge-base', '--is-ancestor', commit, `origin/${config.publisher.branch}`]);
@@ -143,9 +156,37 @@ export async function publishGeneratedUnlocked(config, generated, { dryRun = fal
       return { status: 'published', commit };
     } catch (error) {
       lastError = new Error(committed ? 'publish failed after candidate commit' : 'publish candidate failed');
+      if (!nonFastForward) throw lastError;
+      if (attempt + 1 < attempts) await git(repo, ['worktree', 'remove', candidate]);
     }
   }
   throw lastError;
+}
+
+export async function publishGeneratedUnlocked(config, generated, options = {}) {
+  if (config.role !== 'publisher') throw new Error('publisher role required');
+  return publishFilesUnlocked(config, async () => generated, GENERATED_PATHS, options);
+}
+
+export async function publishCollection(config, input, options = {}) {
+  const collection = createRepositoryCollection(input);
+  const ownPath = collectionPath(config.collectionSlot);
+  if (config.collectionSlot === 'macmini' && config.role !== 'publisher') throw new Error('renderer role required');
+  const allowed = [ownPath, ...(config.collectionSlot === 'macmini' ? GENERATED_PATHS : [])];
+  const now = options.now ?? new Date().toISOString();
+  const prepare = async (candidate) => {
+    const generated = { [ownPath]: stableJson(collection) };
+    if (config.collectionSlot !== 'macmini') return generated;
+    const decision = await repositoryCollectionDecision({ repo: candidate, collection, now, staleAfterHours: config.staleAfterHours });
+    if (decision.status !== 'ready') return generated;
+    const { activity } = processActivitySurface(decision.snapshots, {
+      asOfDate: decision.date, referenceTime: now, expectedSourceIds: ['macbook', 'macmini'], independentSources: config.independentSources, staleAfterHours: config.staleAfterHours,
+    }, options.accountUsage ?? null);
+    if (activity.status === 'unavailable') return generated;
+    return { ...generated, 'metrics/codex-activity.json': stableJson(activity), 'assets/codex-activity.svg': renderActivitySvg(activity) };
+  };
+  const publish = () => publishFilesUnlocked(config, prepare, allowed, options);
+  return options.dryRun ? publish() : withPublisherLock(config.stateDir, publish);
 }
 
 export async function publishGenerated(config, generated, options = {}) {

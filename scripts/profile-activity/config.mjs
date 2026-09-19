@@ -31,7 +31,7 @@ export function parseConfig(value) {
   if (expectedSources.some(({ location }) => location === 'transport') && value.transportDir === null) throw new Error('transport source without transportDir');
   if (value.role === 'publisher' && (expectedSources.length !== 2 || !expectedSources.some(({ sourceId }) => sourceId === value.sourceId))) throw new Error('publisher requires two sources including itself');
   if (typeof value.independentSources !== 'boolean') throw new Error('invalid independentSources');
-  if (value.role === 'publisher') {
+  if (value.role === 'publisher' || value.publisher !== undefined) {
     keys(value.publisher, ['repoDir', 'remote', 'branch', 'candidateRoot', 'retryLimit', 'hooksPath', 'hooksManifest'], 'publisher');
     if (typeof value.publisher.remote !== 'string' || typeof value.publisher.branch !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(value.publisher.branch) || value.publisher.branch.includes('..') || !Number.isSafeInteger(value.publisher.retryLimit) || value.publisher.retryLimit < 0 || value.publisher.retryLimit > 2 || typeof value.publisher.hooksPath !== 'string' || (value.publisher.hooksPath !== '' && !path.isAbsolute(value.publisher.hooksPath))) throw new Error('invalid publisher');
     if (value.publisher.hooksManifest !== undefined) {
@@ -42,9 +42,10 @@ export function parseConfig(value) {
         if (!/^[0-9a-f]{64}$/.test(entry.digest) || !Number.isSafeInteger(entry.mode) || entry.mode < 0 || entry.mode > 0o777) throw new Error('invalid hook entry');
       }
     }
-    if (value.launchAgent !== undefined) throw new Error('publisher cannot own collector launch agent');
-  } else {
-    if (value.publisher !== undefined) throw new Error('collector cannot publish');
+    if (value.role === 'publisher' && value.launchAgent !== undefined) throw new Error('publisher cannot own collector launch agent');
+    if (value.role === 'collector' && value.collectionSlot !== 'macbook') throw new Error('collector may publish only macbook collection');
+  }
+  if (value.role === 'collector') {
     if (value.launchAgent !== undefined) {
       keys(value.launchAgent, ['label', 'plistFile'], 'launchAgent');
       if (value.launchAgent.label !== 'com.graffitoryu.profile-activity.collector') throw new Error('invalid launchAgent label');
