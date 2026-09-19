@@ -1,23 +1,24 @@
 # Profile activity surface design
 
 **Date:** 2026-09-19
-**Status:** Draft for review
+**Status:** Revised for review
 
 ## Intent
 
-Produce a privacy-preserving 30-day Codex activity surface. MacBook and Mac mini collect only their own local activity on separate schedules. The publisher combines their sanitized snapshots during processing. Account-wide Codex limits remain a separate account scope and are never added once per device.
+Produce a privacy-preserving 30-day Codex activity surface. MacBook and Mac mini collect only their own local activity on separate schedules and update separate sanitized collection files in the repository. The renderer combines those two collections only at visualization time. Account-wide Codex limits remain a separate account scope and are never added once per device.
 
-The surface shows usage shape without exposing plugin names, skill names, prompts, responses, tool arguments, paths, task identifiers, source identifiers, model names, or device-specific figures.
+The rendered surface shows usage shape without exposing plugin names, skill names, prompts, responses, tool arguments, paths, task identifiers, source identifiers, model names, or a per-device breakdown. The two explicitly named repository collection files expose only their own anonymous aggregate inputs.
 
 ## Success criteria
 
-- Each device independently produces one validated local snapshot covering the latest 30 KST dates.
-- Processing combines two current snapshots without collecting either device again.
+- Each device independently produces one validated local snapshot and one sanitized repository collection covering the latest 30 KST dates.
+- Each device updates only its own repository collection.
+- Visualization combines the two current collections without collecting either device again.
 - Every retained field is a count, duration, fixed category, percentage input, or availability marker.
-- Plugin and skill identities are reduced in memory and never persist in snapshots, envelopes, diagnostics, or public artifacts.
+- Plugin and skill identities are reduced in memory and never persist in snapshots, repository collections, diagnostics, or rendered artifacts.
 - Missing structured telemetry remains `null`; it never becomes zero or an inferred value.
 - Current account usage can be sampled through the native Codex interface without duplicating it across devices.
-- Existing public output remains unchanged until both device snapshots use the new schema and the enriched public surface is separately verified.
+- Existing merged public output remains unchanged until both repository collections use the new schema and the enriched public surface is separately verified.
 
 ## Non-goals
 
@@ -25,7 +26,7 @@ The surface shows usage shape without exposing plugin names, skill names, prompt
 - Reading prompt, response, or tool-argument content to infer activity
 - Reconstructing historical account quota before the first native sample
 - Treating a README SVG as an interactive dashboard
-- Adding a database, dependency, network service, or shared folder
+- Adding a database, dependency, network service, shared folder, or task-to-task relay
 - Changing installed runtimes, private configuration, automation, or pending delivery state as part of source implementation
 
 ## Data sources
@@ -52,7 +53,7 @@ The publisher-side fixed task samples it once per scheduled processing cycle and
 
 ## Private device snapshot
 
-Introduce private schema v3 while retaining v2 parsing during migration. A v3 snapshot keeps the policy, revision, collection time, timezone, window, and daily activity fields, but removes source identity. The installed config and fixed receiver route bind each source only in memory during processing. Its window contains exactly 30 KST dates.
+Introduce private schema v3 while retaining v2 parsing during migration. A v3 snapshot keeps the policy, revision, collection time, timezone, window, and daily activity fields, but removes source identity. The installed config binds the local collection slot to its fixed repository filename; that binding is never serialized in the JSON body. Its window contains exactly 30 KST dates.
 
 Each day adds this anonymous surface:
 
@@ -78,7 +79,7 @@ Each day adds this anonymous surface:
 
 `reasoning`, when available, contains counts for a fixed non-identifying set: `none`, `low`, `medium`, `high`, `xhigh`, and `other`. Percentages are derived only during processing. `fastTurns` uses `modeTurns` as its denominator. `reasoningTurns` is the sum validated against the fixed reasoning counters.
 
-`newChats` counts a logical session once and assigns it to the first observed active date inside the window. Session identifiers remain only in the private incremental cache and never enter a snapshot or envelope.
+`newChats` counts a logical session once and assigns it to the first observed active date inside the window. Session identifiers remain only in the private incremental cache and never enter a snapshot or repository collection.
 
 `pluginCalls` counts calls that carry an explicit plugin identity. The identity is discarded after classification. `skillUses` counts only explicit structured skill activation events. If the runtime does not expose those events, the value is `null` for that source and date.
 
@@ -96,9 +97,22 @@ No stable hash, opaque plugin identifier, skill name, top-N list, or rare-catego
 
 Classification rules are exact allowlisted prefixes or event types. Unknown tool shapes increase the total only when they satisfy the existing tool-call contract; otherwise their metric becomes unavailable rather than being guessed.
 
+## Repository collections
+
+The repository stores two sanitized collection surfaces:
+
+- `metrics/codex-activity-macbook.json`
+- `metrics/codex-activity-macmini.json`
+
+These are public collection inputs, not private device snapshots. Their fixed filenames bind the collection slot; their JSON bodies contain no source or device identifier and no stable digest. Each file contains only the validated anonymous 30-day schema v3 surface described above.
+
+MacBook may update only the MacBook collection, and Mac mini may update only the Mac mini collection. Their schedules are non-overlapping. Before publishing, each device fetches the latest remote state, replaces only its collection, and runs visualization against both repository collections. A non-fast-forward update re-fetches and recomputes from the new remote state within the existing bounded retry policy; it never force-pushes.
+
+No envelope, receive, acknowledgement, shared transport directory, or task-to-task payload participates in the active workflow. Existing relay state is ignored during rollout and is not migrated into a repository collection.
+
 ## Processing and merge rules
 
-Processing reads the two stored device snapshots. It never invokes collection.
+Visualization reads the two repository collections. It never invokes collection.
 
 - Additive counters are summed when both device values are known.
 - `maxSessionTokens` and `longestSessionMinutes` use the maximum.
@@ -106,9 +120,9 @@ Processing reads the two stored device snapshots. It never invokes collection.
 - Optional metrics remain `null` unless both sources provide compatible structured coverage.
 - Streaks derive from the merged daily `active` values.
 - Account usage is joined once after device merge and is never summed.
-- A stale, missing, conflicting, or mixed-schema input preserves the last public result.
+- A stale, missing, conflicting, or mixed-schema collection preserves the last merged public result while still allowing the current device to publish its own valid collection.
 
-During migration, schema v2 snapshots continue to support the existing public activity output. The enriched surface becomes publishable only when both current device snapshots are schema v3.
+During migration, schema v2 snapshots continue to support the existing public activity output. The enriched surface becomes publishable only when both current repository collections are schema v3.
 
 ## Account usage snapshot
 
@@ -141,7 +155,7 @@ The enriched public schema contains anonymous 30-day data only:
 - reasoning percentages over the fixed reasoning categories when structurally available;
 - daily values for the same anonymous counters.
 
-The output contains no per-device breakdown, top-N list, stable category identifier, or plugin/skill name. The generated SVG remains static. Interactive daily, weekly, and cumulative controls are not part of a README artifact.
+The merged output contains no per-device breakdown, top-N list, stable category identifier, or plugin/skill name. The two repository collection files remain separate anonymous inputs as explicitly selected by the user; the generated SVG exposes only their merged result and remains static. Interactive daily, weekly, and cumulative controls are not part of a README artifact.
 
 ## Failure and diagnostic behavior
 
@@ -150,7 +164,7 @@ The output contains no per-device breakdown, top-N list, stable category identif
 - Raw subprocess output is sanitized immediately using the existing structured failure contract.
 - Diagnostics report only stage, exit code, signal, error class, sanitized stderr class, state-change state, and metric availability.
 - Diagnostics never contain snapshot bodies, account values, identifiers, names, paths, or device-specific figures.
-- No automatic retry follows a failed state-changing command without new direct user approval.
+- No automatic collection retry follows a failed state-changing command without new direct user approval. The existing bounded Git non-fast-forward retry re-fetches and recomputes the same approved publication attempt without recollecting.
 
 ## Verification
 
@@ -164,9 +178,11 @@ Node tests must cover:
 6. weighted percentage aggregation across two independent sources;
 7. account usage sanitization and rejection of identifiers, balances, and extra keys;
 8. v2 compatibility and v3-only enriched publication;
-9. device-local collection followed by processing-only merge;
-10. absence of private canaries from snapshots, envelopes, diagnostics, and public output;
-11. preservation of the last public result on missing, stale, conflicting, or malformed input.
+9. each device updating only its own repository collection;
+10. visualization-only merge without collection or relay calls;
+11. absence of private canaries from snapshots, collection files, diagnostics, and public output;
+12. preservation of the last merged public result on missing, stale, conflicting, or malformed input;
+13. safe recomputation after a non-fast-forward repository update.
 
 The repository check remains:
 
@@ -174,16 +190,17 @@ The repository check remains:
 node --test tests/profile-activity/*.test.mjs
 ```
 
-No test may read real Codex JSONL, write installed state, execute actual delivery, or publish generated files.
+No test may read real Codex JSONL, write installed state, execute an actual repository publication, or publish generated files.
 
 ## Rollout
 
 1. Implement schema v3 and synthetic tests in repository source.
 2. Verify structure-only telemetry support for skill, mode, and reasoning fields without printing values.
-3. Install one approved v3 runtime on each device only after source review.
-4. Keep device collection schedules separate and non-overlapping.
-5. Collect one private v3 snapshot from each device.
-6. Verify one processing-only merge and private account sample.
-7. Enable enriched public output only after privacy review and a two-device preview.
+3. Replace the active relay path with per-device repository collection publication.
+4. Install one approved v3 runtime on each device only after source review.
+5. Keep device collection schedules separate and non-overlapping.
+6. Let each device publish only its own sanitized collection once.
+7. Verify one visualization-only merge and private account sample.
+8. Enable enriched merged output only after privacy review and a two-collection preview.
 
 Rollback restores the previous installed runtime and leaves existing v2 snapshots and the last public result intact. It never deletes raw logs, private snapshots, or delivery state.
