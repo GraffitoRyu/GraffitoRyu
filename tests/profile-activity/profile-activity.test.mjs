@@ -10,6 +10,7 @@ import { aggregateSnapshots } from '../../scripts/profile-activity/aggregate.mjs
 import { collectLogRoots, probeLogRoots } from '../../scripts/profile-activity/collect.mjs';
 import { parsePrivateSnapshot, parsePublicActivity, stableJson } from '../../scripts/profile-activity/contract.mjs';
 import { assertAllowedPaths, publishGenerated, verifyRuntimeManifest, withPublisherLock } from '../../scripts/profile-activity/publish.mjs';
+import { createEnvelope, parseEnvelope, receiveEnvelope } from '../../scripts/profile-activity/relay.mjs';
 import { renderActivitySvg } from '../../scripts/profile-activity/render.mjs';
 import { chooseLatestSnapshots, readSnapshot, saveAndExportSnapshot } from '../../scripts/profile-activity/snapshot.mjs';
 import { SOURCE_A, SOURCE_B, call, makePublicActivity, makeSnapshot, message, rolloutLines } from './fixtures.mjs';
@@ -89,14 +90,35 @@ function tokenCount(timestamp, totalTokens, ordinal) {
   };
 }
 
-function insightSnapshot({ sourceId = SOURCE_A, sessions = 2, calls = 4, tokens = 10, maxSessionTokens = 10, longestSessionMinutes = 3 } = {}) {
-  const snapshot = makeSnapshot({ sourceId, sessions, calls });
+function insightSnapshot({ sourceId = SOURCE_A, revision = 1, collectedAt = '2026-09-13T09:00:00.000Z', sessions = 2, calls = 4, tokens = 10, maxSessionTokens = 10, longestSessionMinutes = 3 } = {}) {
+  const snapshot = makeSnapshot({ sourceId, revision, sessions, calls, collectedAt });
   return {
     ...snapshot,
     schemaVersion: 2,
     days: snapshot.days.map((day) => ({ ...day, tokens, maxSessionTokens, longestSessionMinutes })),
   };
 }
+
+test('T50 envelope digest is metadata and verifies canonical snapshot bytes', () => {
+  const snapshot = insightSnapshot();
+  const envelope = createEnvelope(snapshot);
+  assert.deepEqual(Object.keys(envelope).sort(), ['digest', 'revision', 'schema', 'snapshot']);
+  assert.equal(envelope.schema, 'PROFILE_ACTIVITY_SNAPSHOT_V2');
+  assert.equal(envelope.revision, snapshot.revision);
+  assert.deepEqual(parseEnvelope(envelope).snapshot, snapshot);
+  assert.throws(() => parseEnvelope({ ...envelope, digest: '0'.repeat(64) }), /digest mismatch/);
+});
+
+test('T51 receiver is idempotent and rejects rollback and conflict', async () => {
+  const root = await temp();
+  const file = path.join(root, 'last-good.json');
+  const first = createEnvelope(insightSnapshot({ revision: 2 }));
+  assert.equal((await receiveEnvelope({ envelope: first, expectedSourceId: SOURCE_A, lastGoodFile: file, stateScope: root })).status, 'received');
+  assert.equal((await receiveEnvelope({ envelope: first, expectedSourceId: SOURCE_A, lastGoodFile: file, stateScope: root })).status, 'acknowledged');
+  await assert.rejects(receiveEnvelope({ envelope: createEnvelope(insightSnapshot({ revision: 1 })), expectedSourceId: SOURCE_A, lastGoodFile: file, stateScope: root }), /rollback/);
+  await assert.rejects(receiveEnvelope({ envelope: createEnvelope(insightSnapshot({ revision: 2, calls: 9 })), expectedSourceId: SOURCE_A, lastGoodFile: file, stateScope: root }), /conflict/);
+  assert.equal((await readSnapshot(file, root)).revision, 2);
+});
 
 test('T01 duplicate raw/archive copies do not increase counts', async () => {
   const content = rolloutLines({ events: [message('2026-09-12T01:00:00Z'), call('2026-09-12T01:01:00Z', 'call-a')] });
