@@ -12,9 +12,14 @@ let isPublishableActivity;
 let parseDate;
 let probeLogRoots;
 let publishGenerated;
+let publishGeneratedUnlocked;
+let publishIfReady;
 let readConfig;
 let readSnapshot;
 let renderActivitySvg;
+let nextDelivery;
+let acceptAcknowledgement;
+let receiveEnvelope;
 let saveAndExportSnapshot;
 let stableJson;
 
@@ -55,7 +60,9 @@ async function loadRuntime() {
   ({ collectLogRoots, probeLogRoots } = await import('./collect.mjs'));
   ({ readConfig } = await import('./config.mjs'));
   ({ addDays, isPublishableActivity, parseDate, stableJson } = await import('./contract.mjs'));
-  ({ publishGenerated } = await import('./publish.mjs'));
+  ({ publishGenerated, publishGeneratedUnlocked } = await import('./publish.mjs'));
+  ({ publishIfReady } = await import('./publication-gate.mjs'));
+  ({ acceptAcknowledgement, nextDelivery, receiveEnvelope } = await import('./relay.mjs'));
   ({ renderActivitySvg } = await import('./render.mjs'));
   ({ atomicWrite, readSnapshot, saveAndExportSnapshot } = await import('./snapshot.mjs'));
 }
@@ -63,9 +70,20 @@ async function loadRuntime() {
 function argumentsFor(argv) {
   const [command, ...rest] = argv;
   const configIndex = rest.indexOf('--config');
-  if (!['probe', 'collect', 'refresh', 'run'].includes(command) || configIndex < 0 || !rest[configIndex + 1]) throw new Error('usage');
+  if (!['probe', 'collect', 'refresh', 'run', 'outbox', 'acknowledge', 'receive'].includes(command) || configIndex < 0 || !rest[configIndex + 1]) throw new Error('usage');
   const dateIndex = rest.indexOf('--as-of');
   return { command, configFile: rest[configIndex + 1], dryRun: rest.includes('--dry-run'), asOfDate: dateIndex < 0 ? null : parseDate(rest[dateIndex + 1]) };
+}
+
+async function readPrivateInput() {
+  let input = '';
+  let size = 0;
+  for await (const chunk of process.stdin) {
+    size += Buffer.byteLength(chunk);
+    if (size > 1024 * 1024) throw new Error('private input too large');
+    input += chunk;
+  }
+  return JSON.parse(input);
 }
 
 function todayKst() {
@@ -132,6 +150,24 @@ async function aggregate(config, selfSnapshot, asOfDate, persistLastGood) {
   return aggregateSnapshots(snapshots, { asOfDate, referenceTime: new Date().toISOString(), expectedSourceIds: config.expectedSources.map(({ sourceId }) => sourceId), independentSources: config.independentSources, staleAfterHours: config.staleAfterHours });
 }
 
+async function publisherSnapshots(config, selfSnapshot) {
+  const snapshots = [];
+  for (const source of config.expectedSources) {
+    if (source.sourceId === config.sourceId && selfSnapshot) {
+      snapshots.push(selfSnapshot);
+      continue;
+    }
+    const cacheFile = path.join(config.stateDir, `last-good-${source.sourceId}.json`);
+    try {
+      snapshots.push(await readSnapshot(cacheFile, config.stateDir));
+      continue;
+    } catch {}
+    const scope = source.location === 'local' ? config.stateDir : config.transportDir;
+    try { snapshots.push(await readSnapshot(source.file, scope)); } catch {}
+  }
+  return snapshots;
+}
+
 async function main() {
   await verifyBeforeImport(process.argv.slice(2));
   await loadRuntime();
@@ -147,19 +183,62 @@ async function main() {
     process.stdout.write(stableJson({ status: args.dryRun ? 'dry-run' : 'collected', ...result.summary }));
     return;
   }
+  if (args.command === 'outbox') {
+    if (config.role !== 'collector') throw new Error('collector role required');
+    const stateFile = path.join(config.stateDir, 'delivery-state.json');
+    const snapshot = await readSnapshot(path.join(config.stateDir, 'snapshot.json'), config.stateDir);
+    let state = null;
+    try { state = JSON.parse(await readFile(stateFile, 'utf8')); } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    const result = nextDelivery({ snapshot, state, date: todayKst() });
+    await atomicWrite(stateFile, result.state, config.stateDir);
+    process.stdout.write(stableJson({ status: result.status, ...(result.envelope && { envelope: result.envelope }) }));
+    return;
+  }
+  if (args.command === 'acknowledge') {
+    if (config.role !== 'collector') throw new Error('collector role required');
+    const stateFile = path.join(config.stateDir, 'delivery-state.json');
+    const state = JSON.parse(await readFile(stateFile, 'utf8'));
+    const accepted = acceptAcknowledgement({ acknowledgement: await readPrivateInput(), state });
+    await atomicWrite(stateFile, accepted, config.stateDir);
+    process.stdout.write(stableJson({ status: 'acknowledged', revision: accepted.acknowledgedRevision, digest: accepted.acknowledgedDigest }));
+    return;
+  }
   if (config.role !== 'publisher') throw new Error('publisher role required');
+  if (args.command === 'receive') {
+    const sources = config.expectedSources.filter(({ location, sourceId }) => location === 'transport' && sourceId !== config.sourceId);
+    if (sources.length !== 1) throw new Error('single transport source required');
+    const source = sources[0];
+    const result = await receiveEnvelope({ envelope: await readPrivateInput(), expectedSourceId: source.sourceId, lastGoodFile: path.join(config.stateDir, `last-good-${source.sourceId}.json`), stateScope: config.stateDir });
+    process.stdout.write(stableJson(result));
+    return;
+  }
   const collected = args.command === 'run' ? await collect(config, asOfDate, args.dryRun) : { snapshot: null };
-  const activity = await aggregate(config, collected.snapshot, asOfDate, !args.dryRun);
-  const generated = { 'metrics/codex-activity.json': stableJson(activity), 'assets/codex-activity.svg': renderActivitySvg(activity) };
   if (args.dryRun) {
+    const activity = await aggregate(config, collected.snapshot, asOfDate, false);
+    const generated = { 'metrics/codex-activity.json': stableJson(activity), 'assets/codex-activity.svg': renderActivitySvg(activity) };
     await publishGenerated(config, generated, { dryRun: true });
     await atomicWrite(path.join(config.stateDir, 'preview.json'), generated['metrics/codex-activity.json'], config.stateDir);
     await atomicWrite(path.join(config.stateDir, 'preview.svg'), generated['assets/codex-activity.svg'], config.stateDir);
     process.stdout.write(stableJson({ status: 'dry-run', aggregateStatus: activity.status }));
     return;
   }
-  if (!isPublishableActivity(activity)) throw new Error('aggregate unavailable');
-  process.stdout.write(stableJson(await publishGenerated(config, generated)));
+  const now = new Date().toISOString();
+  const snapshots = await publisherSnapshots(config, collected.snapshot);
+  const result = await publishIfReady({
+    config,
+    snapshots,
+    expectedSourceIds: config.expectedSources.map(({ sourceId }) => sourceId),
+    now,
+    receiptFile: path.join(config.stateDir, 'publication-receipt.json'),
+    publish: async (readySnapshots) => {
+      const activity = aggregateSnapshots(readySnapshots, { asOfDate, referenceTime: now, expectedSourceIds: config.expectedSources.map(({ sourceId }) => sourceId), independentSources: config.independentSources, staleAfterHours: config.staleAfterHours });
+      if (!isPublishableActivity(activity)) throw new Error('aggregate unavailable');
+      return publishGeneratedUnlocked(config, { 'metrics/codex-activity.json': stableJson(activity), 'assets/codex-activity.svg': renderActivitySvg(activity) });
+    },
+  });
+  process.stdout.write(stableJson(result));
 }
 
 main().catch(() => {

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { appendFile, chmod, cp, mkdtemp, mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
+import { appendFile, chmod, cp, mkdtemp, mkdir, readFile, readdir, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -10,7 +10,7 @@ import { aggregateSnapshots } from '../../scripts/profile-activity/aggregate.mjs
 import { collectLogRoots, probeLogRoots } from '../../scripts/profile-activity/collect.mjs';
 import { parsePrivateSnapshot, parsePublicActivity, stableJson } from '../../scripts/profile-activity/contract.mjs';
 import { assertAllowedPaths, publishGenerated, verifyRuntimeManifest, withPublisherLock } from '../../scripts/profile-activity/publish.mjs';
-import { publicationDecision, publicationReceipt } from '../../scripts/profile-activity/publication-gate.mjs';
+import { publicationDecision, publicationReceipt, publishIfReady } from '../../scripts/profile-activity/publication-gate.mjs';
 import { acceptAcknowledgement, createEnvelope, nextDelivery, parseEnvelope, receiveEnvelope } from '../../scripts/profile-activity/relay.mjs';
 import { renderActivitySvg } from '../../scripts/profile-activity/render.mjs';
 import { chooseLatestSnapshots, readSnapshot, saveAndExportSnapshot } from '../../scripts/profile-activity/snapshot.mjs';
@@ -21,6 +21,38 @@ const options = { asOfDate: '2026-09-13', referenceTime: '2026-09-13T09:00:00Z',
 
 async function temp() {
   return mkdtemp(path.join(os.tmpdir(), 'profile-activity-'));
+}
+
+function runWithInput(file, args, input) {
+  return new Promise((resolve, reject) => {
+    const child = execFile(file, args, { encoding: 'utf8' }, (error, stdout, stderr) => {
+      if (error) reject(Object.assign(error, { stdout, stderr }));
+      else resolve({ stdout, stderr });
+    });
+    child.stdin.end(input);
+  });
+}
+
+async function installedCollectorFixture() {
+  const root = await temp();
+  const stateDir = path.join(root, 'state');
+  const logs = path.join(root, 'logs');
+  const runtimeSource = path.resolve('scripts/profile-activity');
+  const runtimeManifest = {};
+  for (const name of (await readdir(runtimeSource)).filter((item) => item.endsWith('.mjs')).sort()) runtimeManifest[name] = createHash('sha256').update(await readFile(path.join(runtimeSource, name))).digest('hex');
+  const runtimeDigest = createHash('sha256').update(stableJson(runtimeManifest)).digest('hex');
+  const runtimeDir = path.join(root, runtimeDigest);
+  await cp(runtimeSource, runtimeDir, { recursive: true });
+  await mkdir(stateDir);
+  await mkdir(logs);
+  const config = path.join(stateDir, 'installed-config.json');
+  const configText = stableJson({
+    schemaVersion: 1, role: 'collector', sourceId: SOURCE_A, policyId: 'local-codex-v1-kst-exclude-profile', codexHome: root, logRoots: [logs], stateDir, transportDir: null,
+    runtimeDir, runtimeManifest, excludedRepoRoots: [], expectedSources: [], independentSources: false, publicDays: 30, retentionDays: 90, staleAfterHours: 48, timezone: 'Asia/Seoul',
+  });
+  await writeFile(config, configText);
+  await writeFile(path.join(stateDir, 'installation-receipt.json'), stableJson({ schemaVersion: 1, sourceCommit: 'a'.repeat(40), stateDir, runtimeDir, runtimeDigest, runtimeManifestDigest: runtimeDigest, installedConfigDigest: createHash('sha256').update(configText).digest('hex') }));
+  return { root, runtimeDir, stateDir, config, cli: path.join(runtimeDir, 'cli.mjs') };
 }
 
 async function collectFiles(files, extra = {}) {
@@ -165,6 +197,38 @@ test('T55 publication gate skips stale input and same-date repeats', () => {
   assert.equal(publicationDecision({ snapshots: [current, legacy], expectedSourceIds: [SOURCE_A, SOURCE_B], now: '2026-09-13T05:00:00Z', receipt: null }).status, 'awaiting-source');
   const receipt = publicationReceipt({ date: '2026-09-13', result: { status: 'published', commit: 'a'.repeat(40) } });
   assert.equal(publicationDecision({ snapshots: [current, insightSnapshot({ sourceId: SOURCE_B, collectedAt: '2026-09-13T04:00:00.000Z' })], expectedSourceIds: [SOURCE_A, SOURCE_B], now: '2026-09-13T05:00:00Z', receipt }).status, 'already-published');
+});
+
+test('T56 installed outbox and acknowledge persist private sender state', async () => {
+  const fixture = await installedCollectorFixture();
+  await writeFile(path.join(fixture.stateDir, 'snapshot.json'), stableJson(insightSnapshot()));
+  const first = JSON.parse((await run(process.execPath, [fixture.cli, 'outbox', '--config', fixture.config])).stdout);
+  assert.equal(first.status, 'send');
+  assert.equal(first.envelope.schema, 'PROFILE_ACTIVITY_SNAPSHOT_V2');
+  const acknowledged = JSON.parse((await runWithInput(process.execPath, [fixture.cli, 'acknowledge', '--config', fixture.config], stableJson({ status: 'received', revision: first.envelope.revision, digest: first.envelope.digest }))).stdout);
+  assert.equal(acknowledged.status, 'acknowledged');
+  assert.equal(JSON.parse((await run(process.execPath, [fixture.cli, 'outbox', '--config', fixture.config])).stdout).status, 'acknowledged');
+});
+
+test('T57 receive-triggered and 08:00 gates publish at most once', async () => {
+  const root = await temp();
+  const snapshots = [
+    insightSnapshot({ collectedAt: '2026-09-13T04:00:00.000Z' }),
+    insightSnapshot({ sourceId: SOURCE_B, collectedAt: '2026-09-13T04:00:00.000Z' }),
+  ];
+  let publishes = 0;
+  const invoke = () => publishIfReady({
+    config: { stateDir: root }, snapshots, expectedSourceIds: [SOURCE_A, SOURCE_B], now: '2026-09-13T05:00:00.000Z', receiptFile: path.join(root, 'publication-receipt.json'),
+    publish: async () => {
+      publishes += 1;
+      await new Promise((resolve) => setImmediate(resolve));
+      return { status: 'published', commit: 'a'.repeat(40) };
+    },
+  });
+  const results = await Promise.all([invoke(), invoke()]);
+  assert.equal(results.filter(({ status }) => status === 'published').length, 1);
+  assert.ok(results.every(({ status }) => ['published', 'skipped-lock', 'already-published'].includes(status)));
+  assert.equal(publishes, 1);
 });
 
 test('T01 duplicate raw/archive copies do not increase counts', async () => {

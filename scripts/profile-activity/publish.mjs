@@ -108,44 +108,47 @@ async function writeGenerated(candidate, generated) {
   }
 }
 
-export async function publishGenerated(config, generated, { dryRun = false } = {}) {
+export async function publishGeneratedUnlocked(config, generated, { dryRun = false } = {}) {
   const repo = await validatePublisherTarget(config);
   if (dryRun) return { status: 'dry-run', paths: GENERATED_PATHS };
-  return withPublisherLock(config.stateDir, async () => {
-    const attempts = Math.min(3, (config.publisher.retryLimit ?? 2) + 1);
-    let lastError;
-    for (let attempt = 0; attempt < attempts; attempt += 1) {
-      const candidate = path.join(config.publisher.candidateRoot, `candidate-${randomUUID()}`);
-      let committed = false;
-      try {
-        await verifyPublisherHooks(repo, config.publisher.hooksManifest);
-        await git(repo, ['fetch', 'origin', config.publisher.branch]);
-        await verifyPublisherHooks(repo, config.publisher.hooksManifest);
-        await git(repo, ['worktree', 'add', '--detach', candidate, `origin/${config.publisher.branch}`]);
-        await writeGenerated(candidate, generated);
-        await git(candidate, ['add', '--', ...GENERATED_PATHS]);
-        const staged = (await git(candidate, ['diff', '--cached', '--name-only'])).split('\n').filter(Boolean);
-        assertAllowedPaths(staged);
-        if (staged.length === 0) {
-          await git(repo, ['worktree', 'remove', candidate]);
-          return { status: 'no-op' };
-        }
-        await verifyPublisherHooks(repo, config.publisher.hooksManifest);
-        await git(candidate, ['commit', '-m', 'chore(profile): refresh activity metrics']);
-        committed = true;
-        const commit = await git(candidate, ['rev-parse', 'HEAD']);
-        assertAllowedPaths((await git(candidate, ['diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD'])).split('\n').filter(Boolean));
-        await verifyPublisherHooks(repo, config.publisher.hooksManifest);
-        await git(candidate, ['push', 'origin', `HEAD:refs/heads/${config.publisher.branch}`]);
-        await verifyPublisherHooks(repo, config.publisher.hooksManifest);
-        await git(candidate, ['fetch', 'origin', config.publisher.branch]);
-        await git(candidate, ['merge-base', '--is-ancestor', commit, `origin/${config.publisher.branch}`]);
+  const attempts = Math.min(3, (config.publisher.retryLimit ?? 2) + 1);
+  let lastError;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const candidate = path.join(config.publisher.candidateRoot, `candidate-${randomUUID()}`);
+    let committed = false;
+    try {
+      await verifyPublisherHooks(repo, config.publisher.hooksManifest);
+      await git(repo, ['fetch', 'origin', config.publisher.branch]);
+      await verifyPublisherHooks(repo, config.publisher.hooksManifest);
+      await git(repo, ['worktree', 'add', '--detach', candidate, `origin/${config.publisher.branch}`]);
+      await writeGenerated(candidate, generated);
+      await git(candidate, ['add', '--', ...GENERATED_PATHS]);
+      const staged = (await git(candidate, ['diff', '--cached', '--name-only'])).split('\n').filter(Boolean);
+      assertAllowedPaths(staged);
+      if (staged.length === 0) {
         await git(repo, ['worktree', 'remove', candidate]);
-        return { status: 'published', commit };
-      } catch (error) {
-        lastError = new Error(committed ? 'publish failed after candidate commit' : 'publish candidate failed');
+        return { status: 'no-op' };
       }
+      await verifyPublisherHooks(repo, config.publisher.hooksManifest);
+      await git(candidate, ['commit', '-m', 'chore(profile): refresh activity metrics']);
+      committed = true;
+      const commit = await git(candidate, ['rev-parse', 'HEAD']);
+      assertAllowedPaths((await git(candidate, ['diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD'])).split('\n').filter(Boolean));
+      await verifyPublisherHooks(repo, config.publisher.hooksManifest);
+      await git(candidate, ['push', 'origin', `HEAD:refs/heads/${config.publisher.branch}`]);
+      await verifyPublisherHooks(repo, config.publisher.hooksManifest);
+      await git(candidate, ['fetch', 'origin', config.publisher.branch]);
+      await git(candidate, ['merge-base', '--is-ancestor', commit, `origin/${config.publisher.branch}`]);
+      await git(repo, ['worktree', 'remove', candidate]);
+      return { status: 'published', commit };
+    } catch (error) {
+      lastError = new Error(committed ? 'publish failed after candidate commit' : 'publish candidate failed');
     }
-    throw lastError;
-  });
+  }
+  throw lastError;
+}
+
+export async function publishGenerated(config, generated, options = {}) {
+  if (options.dryRun) return publishGeneratedUnlocked(config, generated, options);
+  return withPublisherLock(config.stateDir, () => publishGeneratedUnlocked(config, generated, options));
 }

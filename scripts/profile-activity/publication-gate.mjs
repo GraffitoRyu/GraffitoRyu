@@ -1,5 +1,7 @@
+import { readFile } from 'node:fs/promises';
 import { parseDate, parsePrivateSnapshot } from './contract.mjs';
-import { chooseLatestSnapshots } from './snapshot.mjs';
+import { withPublisherLock } from './publish.mjs';
+import { atomicWrite, chooseLatestSnapshots } from './snapshot.mjs';
 
 function kstParts(value) {
   const instant = new Date(value);
@@ -35,4 +37,18 @@ export function publicationReceipt({ date, result }) {
   const commit = result.commit ?? null;
   if (commit !== null && (typeof commit !== 'string' || !/^[0-9a-f]{40}$/.test(commit))) throw new Error('invalid publication commit');
   return { schemaVersion: 1, date, status: result.status, commit };
+}
+
+export async function publishIfReady({ config, snapshots, expectedSourceIds, now, receiptFile, publish }) {
+  return withPublisherLock(config.stateDir, async () => {
+    let receipt = null;
+    try { receipt = JSON.parse(await readFile(receiptFile, 'utf8')); } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    const decision = publicationDecision({ snapshots, expectedSourceIds, now, receipt });
+    if (decision.status !== 'ready') return decision;
+    const result = await publish(decision.snapshots);
+    await atomicWrite(receiptFile, publicationReceipt({ date: decision.date, result }), config.stateDir);
+    return result;
+  });
 }
