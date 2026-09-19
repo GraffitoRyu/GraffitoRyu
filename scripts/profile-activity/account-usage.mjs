@@ -21,6 +21,7 @@ function instant(value, name) {
 export function parseAccountUsage(value) {
   exactKeys(value, KEYS, 'account usage');
   exactKeys(value.window, WINDOW_KEYS, 'account usage window');
+  if (value.observedAt === null) throw new Error('invalid observedAt');
   const observedAt = instant(value.observedAt, 'observedAt');
   const durationMinutes = value.window.durationMinutes;
   if (durationMinutes !== null && (!Number.isSafeInteger(durationMinutes) || durationMinutes < 1)) throw new Error('invalid durationMinutes');

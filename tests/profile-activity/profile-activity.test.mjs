@@ -195,6 +195,13 @@ test('v3 schema rejects wrong ranges, denominators, extras, and identifiers', ()
   const extra = makeV3Snapshot();
   extra.days[0].pluginName = 'PRIVATE-PLUGIN-CANARY';
   assert.throws(() => parsePrivateSnapshot(extra), /keys/);
+
+  const partition = makeV3Snapshot({ calls: 2, pluginCalls: 1 });
+  partition.days[0].otherToolCalls = 0;
+  assert.throws(() => parsePrivateSnapshot(partition), /toolCalls/);
+
+  const chats = makeV3Snapshot({ sessions: 1, newChats: 2 });
+  assert.throws(() => parsePrivateSnapshot(chats), /newChats/);
 });
 
 test('v3 collector reduces sessions, tool families, and explicit structured events to anonymous counters', async () => {
@@ -334,6 +341,7 @@ test('account usage rejects identifiers, billing metadata, raw responses, extras
   assert.throws(() => parseAccountUsage({ ...sample, window: { ...sample.window, usedPercent: 101 } }), /usedPercent/);
   assert.throws(() => parseAccountUsage({ ...sample, creditUnlimited: true }), /credit/);
   assert.throws(() => parseAccountUsage({ ...sample, window: { ...sample.window, extra: true } }), /keys/);
+  assert.throws(() => parseAccountUsage({ ...sample, observedAt: null }), /observedAt/);
 });
 
 test('v3 envelope uses a version-matched schema and retains no category identity', () => {

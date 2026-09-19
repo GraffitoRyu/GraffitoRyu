@@ -85,6 +85,9 @@ function parseDays(value, window, schemaVersion = 1) {
     if (day.coverage === 'unknown' && [tokens, maxSessionTokens, longestSessionMinutes].some((item) => item !== null)) throw new Error('unknown day has profile values');
     if (schemaVersion !== 3) return { date, active: day.active, activeSessions, toolCalls, tokens, maxSessionTokens, longestSessionMinutes, coverage: day.coverage };
     const counts = Object.fromEntries(['newChats', 'pluginCalls', 'browserCalls', 'computerUseCalls', 'otherToolCalls', 'skillUses', 'fastTurns', 'modeTurns', 'reasoningTurns'].map((key) => [key, nullableCount(day[key], key)]));
+    const toolFamilies = [counts.pluginCalls, counts.browserCalls, counts.computerUseCalls, counts.otherToolCalls];
+    if (toolCalls !== null && toolFamilies.every((count) => count !== null) && toolFamilies.reduce((sum, count) => sum + count, 0) !== toolCalls) throw new Error('invalid toolCalls partition');
+    if (counts.newChats !== null && activeSessions !== null && counts.newChats > activeSessions) throw new Error('invalid newChats');
     if ((counts.fastTurns === null) !== (counts.modeTurns === null) || counts.fastTurns !== null && counts.fastTurns > counts.modeTurns) throw new Error('invalid fastTurns denominator');
     let reasoning = null;
     if (day.reasoning !== null) {
