@@ -213,7 +213,7 @@ async function main() {
     const accepted = acceptAcknowledgement({ acknowledgement: await readPrivateInput(), state });
     await atomicWrite(stateFile, accepted, config.stateDir);
     stateChanged = true;
-    process.stdout.write(stableJson({ status: 'acknowledged', revision: accepted.acknowledgedRevision, digest: accepted.acknowledgedDigest }));
+    process.stdout.write(stableJson({ status: 'acknowledged', revision: accepted.acknowledgedRevision, ...(accepted.envelope.schema === 'PROFILE_ACTIVITY_SNAPSHOT_V3' ? {} : { digest: accepted.acknowledgedDigest }) }));
     return;
   }
   if (config.role !== 'publisher') throw new Error('publisher role required');

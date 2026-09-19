@@ -16,9 +16,10 @@ function exactKeys(value, expected, name) {
 }
 
 function acknowledgement(value, statuses, pendingEnvelope) {
-  exactKeys(value, ['status', 'revision', 'digest'], 'acknowledgement');
-  if (!statuses.includes(value.status) || !Number.isSafeInteger(value.revision) || value.revision < 1 || !/^[0-9a-f]{64}$/.test(value.digest)) throw new Error('invalid acknowledgement');
-  if (pendingEnvelope && (value.revision !== pendingEnvelope.revision || value.digest !== pendingEnvelope.digest)) throw new Error('acknowledgement mismatch');
+  const v3 = pendingEnvelope?.schema === 'PROFILE_ACTIVITY_SNAPSHOT_V3' || !Object.hasOwn(value ?? {}, 'digest');
+  exactKeys(value, v3 ? ['status', 'revision'] : ['status', 'revision', 'digest'], 'acknowledgement');
+  if (!statuses.includes(value.status) || !Number.isSafeInteger(value.revision) || value.revision < 1 || !v3 && !/^[0-9a-f]{64}$/.test(value.digest)) throw new Error('invalid acknowledgement');
+  if (pendingEnvelope && (value.revision !== pendingEnvelope.revision || !v3 && value.digest !== pendingEnvelope.digest)) throw new Error('acknowledgement mismatch');
   return value;
 }
 

@@ -392,6 +392,7 @@ test('v3 envelope uses a version-matched schema and retains no category identity
   const snapshot = makeV3Snapshot({ calls: 1, pluginCalls: 1, skillUses: 1 });
   const envelope = createEnvelope(snapshot);
   assert.equal(envelope.schema, 'PROFILE_ACTIVITY_SNAPSHOT_V3');
+  assert.deepEqual(Object.keys(envelope).sort(), ['revision', 'schema', 'snapshot']);
   assert.equal(parseEnvelope(envelope).snapshot.schemaVersion, 3);
   assert.throws(() => parseEnvelope({ ...envelope, schema: 'PROFILE_ACTIVITY_SNAPSHOT_V2' }), /identity/);
   assert.doesNotMatch(stableJson(envelope), /PRIVATE|pluginName|pluginId|skillName|modelName|arguments/);
@@ -459,9 +460,17 @@ test('v3 receiver binds a source-less envelope to its configured private slot', 
   const root = await temp();
   const file = path.join(root, 'last-good.json');
   const envelope = createEnvelope(makeV3Snapshot());
-  assert.equal((await receiveEnvelope({ envelope, expectedSourceId: SOURCE_A, lastGoodFile: file, stateScope: root })).status, 'received');
+  const received = await receiveEnvelope({ envelope, expectedSourceId: SOURCE_A, lastGoodFile: file, stateScope: root });
+  assert.deepEqual(received, { status: 'received', revision: envelope.revision });
   assert.doesNotMatch(await readFile(file, 'utf8'), /sourceId|11111111|22222222/);
-  assert.equal((await receiveEnvelope({ envelope, expectedSourceId: SOURCE_A, lastGoodFile: file, stateScope: root })).status, 'acknowledged');
+  assert.deepEqual(await receiveEnvelope({ envelope, expectedSourceId: SOURCE_A, lastGoodFile: file, stateScope: root }), { status: 'acknowledged', revision: envelope.revision });
+});
+
+test('v3 acknowledgement uses revision without a stable digest', () => {
+  const delivery = nextDelivery({ snapshot: makeV3Snapshot(), state: null, date: '2026-09-20' });
+  assert.equal(Object.hasOwn(delivery.envelope, 'digest'), false);
+  const state = acceptAcknowledgement({ acknowledgement: { status: 'received', revision: delivery.envelope.revision }, state: delivery.state });
+  assert.equal(nextDelivery({ snapshot: makeV3Snapshot({ revision: 2 }), state, date: '2026-09-20' }).status, 'acknowledged');
 });
 
 test('T50 envelope digest is metadata and verifies canonical snapshot bytes', () => {
