@@ -11,6 +11,7 @@ let atomicWrite;
 let collectLogRoots;
 let isPublishableActivity;
 let parseDate;
+let parsePrivateSnapshot;
 let probeLogRoots;
 let publishGenerated;
 let publishGeneratedUnlocked;
@@ -69,7 +70,7 @@ async function loadRuntime() {
   ({ parseAccountUsage, processActivitySurface } = await import('./account-usage.mjs'));
   ({ collectLogRoots, probeLogRoots } = await import('./collect.mjs'));
   ({ readConfig } = await import('./config.mjs'));
-  ({ addDays, isPublishableActivity, parseDate, stableJson } = await import('./contract.mjs'));
+  ({ addDays, isPublishableActivity, parseDate, parsePrivateSnapshot, stableJson } = await import('./contract.mjs'));
   ({ publishGenerated, publishGeneratedUnlocked } = await import('./publish.mjs'));
   ({ publishIfReady } = await import('./publication-gate.mjs'));
   ({ acceptAcknowledgement, nextDelivery, receiveEnvelope } = await import('./relay.mjs'));
@@ -110,10 +111,20 @@ async function collect(config, asOfDate, dryRun) {
   const result = await collectLogRoots({ logRoots: config.logRoots, excludedRepoRoots: config.excludedRepoRoots, from, to: asOfDate, cache });
   const snapshotFile = path.join(config.stateDir, 'snapshot.json');
   let revision = 1;
-  try { revision = (await readSnapshot(snapshotFile, config.stateDir)).revision + 1; } catch {}
+  try {
+    revision = (await readSnapshot(snapshotFile, config.stateDir)).revision + 1;
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      if (!/invalid private snapshot keys/.test(error.message)) throw error;
+      const { sourceId, ...anonymous } = JSON.parse(await readFile(snapshotFile, 'utf8'));
+      if (sourceId !== config.sourceId) throw new Error('draft source mismatch');
+      const migrated = parsePrivateSnapshot(anonymous);
+      if (migrated.schemaVersion !== 3) throw new Error('invalid draft snapshot');
+      revision = migrated.revision + 1;
+    }
+  }
   const snapshot = {
     schemaVersion: 3,
-    sourceId: config.sourceId,
     revision,
     policyId: config.policyId,
     collectedAt: new Date().toISOString(),
@@ -139,18 +150,25 @@ async function collect(config, asOfDate, dryRun) {
 
 async function publisherSnapshots(config) {
   const snapshots = [];
+  const add = (snapshot, sourceId) => snapshots.push({ sourceId, snapshot });
   for (const source of config.expectedSources) {
     if (source.sourceId === config.sourceId) {
-      try { snapshots.push(await readSnapshot(path.join(config.stateDir, 'snapshot.json'), config.stateDir)); } catch {}
+      try { add(await readSnapshot(path.join(config.stateDir, 'snapshot.json'), config.stateDir), source.sourceId); } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+      }
       continue;
     }
     const cacheFile = path.join(config.stateDir, `last-good-${source.sourceId}.json`);
     try {
-      snapshots.push(await readSnapshot(cacheFile, config.stateDir));
+      add(await readSnapshot(cacheFile, config.stateDir), source.sourceId);
       continue;
-    } catch {}
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
     const scope = source.location === 'local' ? config.stateDir : config.transportDir;
-    try { snapshots.push(await readSnapshot(source.file, scope)); } catch {}
+    try { add(await readSnapshot(source.file, scope), source.sourceId); } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
   }
   return snapshots;
 }

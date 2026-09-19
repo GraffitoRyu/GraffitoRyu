@@ -52,7 +52,7 @@ The publisher-side fixed task samples it once per scheduled processing cycle and
 
 ## Private device snapshot
 
-Introduce private schema v3 while retaining v2 parsing during migration. A v3 snapshot keeps the existing identity, policy, revision, collection time, timezone, window, and daily activity fields. Its window contains exactly 30 KST dates.
+Introduce private schema v3 while retaining v2 parsing during migration. A v3 snapshot keeps the policy, revision, collection time, timezone, window, and daily activity fields, but removes source identity. The installed config and fixed receiver route bind each source only in memory during processing. Its window contains exactly 30 KST dates.
 
 Each day adds this anonymous surface:
 

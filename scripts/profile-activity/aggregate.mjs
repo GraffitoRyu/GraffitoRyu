@@ -12,7 +12,8 @@ export function aggregateSnapshots(inputs, options) {
   if (!Array.isArray(options.expectedSourceIds) || options.expectedSourceIds.length !== 2 || new Set(options.expectedSourceIds).size !== 2) throw new Error('exactly two sources required');
   const referenceTime = new Date(options.referenceTime);
   if (Number.isNaN(referenceTime.valueOf())) throw new Error('invalid referenceTime');
-  const snapshots = chooseLatestSnapshots(inputs, options.expectedSourceIds);
+  const selected = chooseLatestSnapshots(inputs, options.expectedSourceIds);
+  const snapshots = selected.map(({ snapshot }) => snapshot);
   if (snapshots.some((snapshot) => new Date(snapshot.collectedAt) - referenceTime > 5 * 60 * 1000)) throw new Error('snapshot is too far in the future');
   const from = addDays(asOfDate, -29);
   const versions = new Set(snapshots.map(({ schemaVersion }) => schemaVersion));
@@ -21,7 +22,7 @@ export function aggregateSnapshots(inputs, options) {
   const profile = surface || snapshots.length === 2 && versions.size === 1 && versions.has(2);
   const aggregation = options.independentSources === true ? 'sum' : 'lower-bound';
   const combine = (values) => aggregation === 'sum' ? values.reduce((sum, value) => sum + value, 0) : Math.max(...values);
-  const bySource = new Map(snapshots.map((snapshot) => [snapshot.sourceId, new Map(snapshot.days.map((day) => [day.date, day]))]));
+  const bySource = new Map(selected.map(({ sourceId, snapshot }) => [sourceId, new Map(snapshot.days.map((day) => [day.date, day]))]));
   const days = [];
   for (let date = from; date <= asOfDate; date = addDays(date, 1)) {
     const sourceDays = options.expectedSourceIds.map((id) => bySource.get(id)?.get(date));

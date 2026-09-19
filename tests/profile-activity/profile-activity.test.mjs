@@ -16,7 +16,7 @@ import { acceptAcknowledgement, createEnvelope, nextDelivery, parseEnvelope, rec
 import * as deliveryExecution from '../../scripts/profile-activity/delivery-execution.mjs';
 import { renderActivitySvg } from '../../scripts/profile-activity/render.mjs';
 import { chooseLatestSnapshots, readSnapshot, saveAndExportSnapshot } from '../../scripts/profile-activity/snapshot.mjs';
-import { SOURCE_A, SOURCE_B, call, makePublicActivity, makeSnapshot, makeV3Snapshot, message, rolloutLines } from './fixtures.mjs';
+import { SOURCE_A, SOURCE_B, call, makePublicActivity, makeSnapshot, makeV3Input, makeV3Snapshot, message, rolloutLines } from './fixtures.mjs';
 
 const run = promisify(execFile);
 const options = { asOfDate: '2026-09-13', referenceTime: '2026-09-13T09:00:00Z', expectedSourceIds: [SOURCE_A, SOURCE_B], independentSources: true };
@@ -204,6 +204,19 @@ test('v3 schema rejects wrong ranges, denominators, extras, and identifiers', ()
   assert.throws(() => parsePrivateSnapshot(chats), /newChats/);
 });
 
+test('v3 snapshot and envelope omit source identity while merge keeps private slot context', () => {
+  const a = makeV3Snapshot();
+  const b = makeV3Snapshot();
+  const parsed = parsePrivateSnapshot(a);
+  const envelope = createEnvelope(a);
+  assert.equal(Object.hasOwn(parsed, 'sourceId'), false);
+  assert.doesNotMatch(stableJson(envelope), /sourceId|11111111|22222222/);
+  assert.equal(aggregateSnapshots([{ sourceId: SOURCE_A, snapshot: a }, { sourceId: SOURCE_B, snapshot: b }], options).schemaVersion, 3);
+  assert.throws(() => aggregateSnapshots([a, b], options), /unregistered source/);
+  assert.throws(() => chooseLatestSnapshots([{ sourceId: SOURCE_B, snapshot: makeSnapshot() }], [SOURCE_A, SOURCE_B]), /mismatch/);
+  assert.throws(() => parsePrivateSnapshot({ ...a, sourceId: SOURCE_A }), /keys/);
+});
+
 test('v3 collector reduces sessions, tool families, and explicit structured events to anonymous counters', async () => {
   const first = rolloutLines({ id: 'SESSION-CANARY-A', events: [
     message('2026-09-12T01:00:00Z'),
@@ -264,12 +277,12 @@ test('v3 collector counts a chat as new only when its first activity is inside t
 });
 
 test('v3 aggregate sums anonymous counters, takes maxima, and weights percentages by raw denominators', () => {
-  const a = makeV3Snapshot({
+  const a = makeV3Input({
     sessions: 1, newChats: 1, calls: 4, pluginCalls: 1, browserCalls: 1, computerUseCalls: 1,
     skillUses: 2, tokens: 10, maxSessionTokens: 9, longestSessionMinutes: 3,
     fastTurns: 1, modeTurns: 2, reasoning: { none: 0, low: 1, medium: 0, high: 1, xhigh: 0, other: 0 },
   });
-  const b = makeV3Snapshot({
+  const b = makeV3Input({
     sourceId: SOURCE_B, sessions: 2, newChats: 2, calls: 6, pluginCalls: 2, browserCalls: 1, computerUseCalls: 1,
     skillUses: 3, tokens: 20, maxSessionTokens: 15, longestSessionMinutes: 7,
     fastTurns: 9, modeTurns: 10, reasoning: { none: 0, low: 0, medium: 0, high: 8, xhigh: 0, other: 0 },
@@ -292,8 +305,8 @@ test('v3 aggregate sums anonymous counters, takes maxima, and weights percentage
 });
 
 test('v3 aggregate propagates unavailable optional metrics from either source', () => {
-  const a = makeV3Snapshot({ skillUses: 2, fastTurns: 1, modeTurns: 2, reasoning: { none: 0, low: 0, medium: 0, high: 1, xhigh: 0, other: 0 } });
-  const b = makeV3Snapshot({ sourceId: SOURCE_B });
+  const a = makeV3Input({ skillUses: 2, fastTurns: 1, modeTurns: 2, reasoning: { none: 0, low: 0, medium: 0, high: 1, xhigh: 0, other: 0 } });
+  const b = makeV3Input({ sourceId: SOURCE_B });
   const result = aggregateSnapshots([a, b], options);
   assert.equal(result.summary.skillUses, null);
   assert.equal(result.summary.fastModePercent, null);
@@ -303,15 +316,15 @@ test('v3 aggregate propagates unavailable optional metrics from either source', 
 
 test('v3 aggregate refuses a non-independent two-device surface', () => {
   assert.throws(() => aggregateSnapshots([
-    makeV3Snapshot(),
-    makeV3Snapshot({ sourceId: SOURCE_B }),
+    makeV3Input(),
+    makeV3Input({ sourceId: SOURCE_B }),
   ], { ...options, independentSources: false }), /independent sources required/);
 });
 
 test('v3 renderer shows only anonymous fixed activity categories', () => {
   const activity = aggregateSnapshots([
-    makeV3Snapshot({ sessions: 1, newChats: 1, calls: 4, pluginCalls: 1, browserCalls: 1, computerUseCalls: 1, skillUses: 1, fastTurns: 1, modeTurns: 2, reasoning: { none: 0, low: 1, medium: 0, high: 1, xhigh: 0, other: 0 } }),
-    makeV3Snapshot({ sourceId: SOURCE_B, sessions: 1, newChats: 1, calls: 4, pluginCalls: 1, browserCalls: 1, computerUseCalls: 1, skillUses: 1, fastTurns: 1, modeTurns: 2, reasoning: { none: 0, low: 1, medium: 0, high: 1, xhigh: 0, other: 0 } }),
+    makeV3Input({ sessions: 1, newChats: 1, calls: 4, pluginCalls: 1, browserCalls: 1, computerUseCalls: 1, skillUses: 1, fastTurns: 1, modeTurns: 2, reasoning: { none: 0, low: 1, medium: 0, high: 1, xhigh: 0, other: 0 } }),
+    makeV3Input({ sourceId: SOURCE_B, sessions: 1, newChats: 1, calls: 4, pluginCalls: 1, browserCalls: 1, computerUseCalls: 1, skillUses: 1, fastTurns: 1, modeTurns: 2, reasoning: { none: 0, low: 1, medium: 0, high: 1, xhigh: 0, other: 0 } }),
   ], options);
   const svg = renderActivitySvg(activity);
   assert.match(svg, /New chats/);
@@ -338,12 +351,12 @@ test('account usage accepts only the exact sanitized private contract and joins 
     coverage: 'complete',
   };
   assert.deepEqual(parseAccountUsage(sample), sample);
-  const result = processActivitySurface([makeV3Snapshot(), makeV3Snapshot({ sourceId: SOURCE_B })], options, sample);
+  const result = processActivitySurface([makeV3Input(), makeV3Input({ sourceId: SOURCE_B })], options, sample);
   assert.deepEqual(result.accountUsage, sample);
   assert.equal(result.activity.schemaVersion, 3);
   assert.equal(Object.hasOwn(result.activity, 'accountUsage'), false);
   assert.doesNotMatch(stableJson(result.activity), /usedPercent|reset|credit|account/);
-  assert.equal(processActivitySurface([makeV3Snapshot(), makeV3Snapshot({ sourceId: SOURCE_B })], options).accountUsage, null);
+  assert.equal(processActivitySurface([makeV3Input(), makeV3Input({ sourceId: SOURCE_B })], options).accountUsage, null);
 });
 
 test('account usage rejects identifiers, billing metadata, raw responses, extras, and invalid values', async () => {
@@ -387,11 +400,11 @@ test('v3 envelope uses a version-matched schema and retains no category identity
 test('v3 publication accepts matching current v2 or v3 pairs and waits on mixed or stale pairs', () => {
   const now = '2026-09-13T05:00:00.000Z';
   const v2 = [insightSnapshot({ collectedAt: '2026-09-13T04:00:00.000Z' }), insightSnapshot({ sourceId: SOURCE_B, collectedAt: '2026-09-13T04:00:00.000Z' })];
-  const v3 = [makeV3Snapshot({ collectedAt: '2026-09-13T04:00:00.000Z' }), makeV3Snapshot({ sourceId: SOURCE_B, collectedAt: '2026-09-13T04:00:00.000Z' })];
+  const v3 = [makeV3Input({ collectedAt: '2026-09-13T04:00:00.000Z' }), makeV3Input({ sourceId: SOURCE_B, collectedAt: '2026-09-13T04:00:00.000Z' })];
   assert.equal(publicationDecision({ snapshots: v2, expectedSourceIds: [SOURCE_A, SOURCE_B], now, receipt: null }).status, 'ready');
   assert.equal(publicationDecision({ snapshots: v3, expectedSourceIds: [SOURCE_A, SOURCE_B], now, receipt: null }).status, 'ready');
   assert.equal(publicationDecision({ snapshots: [v2[0], v3[1]], expectedSourceIds: [SOURCE_A, SOURCE_B], now, receipt: null }).status, 'awaiting-source');
-  const stale = v3.map((snapshot) => ({ ...snapshot, collectedAt: '2026-09-10T04:00:00.000Z' }));
+  const stale = v3.map(({ sourceId, snapshot }) => ({ sourceId, snapshot: { ...snapshot, collectedAt: '2026-09-10T04:00:00.000Z' } }));
   assert.equal(publicationDecision({ snapshots: stale, expectedSourceIds: [SOURCE_A, SOURCE_B], now, receipt: null }).status, 'awaiting-source');
 });
 
@@ -399,18 +412,18 @@ test('v3 preservation refuses missing, conflicting, and malformed inputs before 
   const root = await temp();
   let publishes = 0;
   const result = await publishIfReady({
-    config: { stateDir: root }, snapshots: [makeV3Snapshot({ collectedAt: '2026-09-13T04:00:00.000Z' })], expectedSourceIds: [SOURCE_A, SOURCE_B], now: '2026-09-13T05:00:00.000Z',
+    config: { stateDir: root }, snapshots: [makeV3Input({ collectedAt: '2026-09-13T04:00:00.000Z' })], expectedSourceIds: [SOURCE_A, SOURCE_B], now: '2026-09-13T05:00:00.000Z',
     receiptFile: path.join(root, 'publication-receipt.json'), publish: async () => { publishes += 1; return { status: 'published', commit: 'a'.repeat(40) }; },
   });
   assert.equal(result.status, 'awaiting-source');
   assert.equal(publishes, 0);
   assert.throws(() => publicationDecision({
-    snapshots: [makeV3Snapshot(), makeV3Snapshot({ calls: 1, pluginCalls: 1 }), makeV3Snapshot({ sourceId: SOURCE_B })],
+    snapshots: [makeV3Input(), makeV3Input({ calls: 1, pluginCalls: 1 }), makeV3Input({ sourceId: SOURCE_B })],
     expectedSourceIds: [SOURCE_A, SOURCE_B], now: '2026-09-13T05:00:00.000Z', receipt: null,
   }), /conflict/);
   const malformed = makeV3Snapshot({ sourceId: SOURCE_B });
   malformed.days[0].privateCanary = 'PRIVATE-CANARY';
-  assert.throws(() => publicationDecision({ snapshots: [makeV3Snapshot(), malformed], expectedSourceIds: [SOURCE_A, SOURCE_B], now: '2026-09-13T05:00:00.000Z', receipt: null }), /keys/);
+  assert.throws(() => publicationDecision({ snapshots: [makeV3Input(), { sourceId: SOURCE_B, snapshot: malformed }], expectedSourceIds: [SOURCE_A, SOURCE_B], now: '2026-09-13T05:00:00.000Z', receipt: null }), /keys/);
   await assert.rejects(readFile(path.join(root, 'publication-receipt.json'), 'utf8'));
 });
 
@@ -422,6 +435,33 @@ test('v3 processing run reads stored snapshots without collecting a device', asy
   assert.ok(['before-window', 'awaiting-source'].includes(result.status));
   assert.equal((await readSnapshot(path.join(fixture.stateDir, 'snapshot.json'), fixture.stateDir)).revision, 5);
   assert.deepEqual(await readdir(path.join(fixture.root, 'logs')), []);
+});
+
+test('v3 processing refuses malformed last-good instead of falling back to transport', async () => {
+  const fixture = await installedPublisherFixture();
+  await writeFile(path.join(fixture.stateDir, 'snapshot.json'), stableJson(makeV3Snapshot()));
+  await writeFile(path.join(fixture.stateDir, `last-good-${SOURCE_A}.json`), '{"schemaVersion":3}\n');
+  await writeFile(path.join(fixture.root, 'remote.json'), stableJson(makeV3Snapshot()));
+  await assert.rejects(run(process.execPath, [fixture.cli, 'run', '--config', fixture.config, '--as-of', '2026-09-13']));
+  await assert.rejects(readFile(path.join(fixture.stateDir, 'publication-receipt.json'), 'utf8'));
+});
+
+test('v3 collection migrates an untransmitted identified draft without resetting revision', async () => {
+  const fixture = await installedCollectorFixture();
+  await writeFile(path.join(fixture.stateDir, 'snapshot.json'), stableJson({ ...makeV3Snapshot({ revision: 5 }), sourceId: SOURCE_A }));
+  await run(process.execPath, [fixture.cli, 'collect', '--config', fixture.config, '--as-of', '2026-09-13']);
+  const stored = JSON.parse(await readFile(path.join(fixture.stateDir, 'snapshot.json'), 'utf8'));
+  assert.equal(stored.revision, 6);
+  assert.equal(Object.hasOwn(stored, 'sourceId'), false);
+});
+
+test('v3 receiver binds a source-less envelope to its configured private slot', async () => {
+  const root = await temp();
+  const file = path.join(root, 'last-good.json');
+  const envelope = createEnvelope(makeV3Snapshot());
+  assert.equal((await receiveEnvelope({ envelope, expectedSourceId: SOURCE_A, lastGoodFile: file, stateScope: root })).status, 'received');
+  assert.doesNotMatch(await readFile(file, 'utf8'), /sourceId|11111111|22222222/);
+  assert.equal((await receiveEnvelope({ envelope, expectedSourceId: SOURCE_A, lastGoodFile: file, stateScope: root })).status, 'acknowledged');
 });
 
 test('T50 envelope digest is metadata and verifies canonical snapshot bytes', () => {
@@ -757,7 +797,7 @@ test('T13 later revision replaces past dates', () => {
 
 test('T14 downgrade is ignored and same-revision conflict is rejected', () => {
   const newer = makeSnapshot({ revision: 2, calls: 4 });
-  assert.equal(chooseLatestSnapshots([newer, makeSnapshot({ calls: 1 })], [SOURCE_A])[0].revision, 2);
+  assert.equal(chooseLatestSnapshots([newer, makeSnapshot({ calls: 1 })], [SOURCE_A])[0].snapshot.revision, 2);
   assert.throws(() => chooseLatestSnapshots([makeSnapshot({ calls: 1 }), makeSnapshot({ calls: 2 })], [SOURCE_A]));
 });
 

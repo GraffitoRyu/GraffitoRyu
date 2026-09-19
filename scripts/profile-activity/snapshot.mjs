@@ -75,11 +75,15 @@ export function chooseLatestSnapshots(snapshots, expectedSourceIds) {
   const expected = new Set(expectedSourceIds);
   const selected = new Map();
   for (const input of snapshots) {
-    const snapshot = parsePrivateSnapshot(input);
-    if (!expected.has(snapshot.sourceId)) throw new Error('unregistered source');
-    const current = selected.get(snapshot.sourceId);
-    if (!current || snapshot.revision > current.revision) selected.set(snapshot.sourceId, snapshot);
-    else if (snapshot.revision === current.revision && snapshotDigest(snapshot) !== snapshotDigest(current)) throw new Error('snapshot revision conflict');
+    const bound = input?.snapshot !== undefined;
+    if (bound && Object.keys(input).sort().join(',') !== 'snapshot,sourceId') throw new Error('invalid source binding');
+    const snapshot = parsePrivateSnapshot(bound ? input.snapshot : input);
+    const sourceId = bound ? input.sourceId : snapshot.sourceId;
+    if (!expected.has(sourceId) || snapshot.schemaVersion === 3 && !bound) throw new Error('unregistered source');
+    if (snapshot.schemaVersion !== 3 && bound && snapshot.sourceId !== sourceId) throw new Error('source binding mismatch');
+    const current = selected.get(sourceId);
+    if (!current || snapshot.revision > current.snapshot.revision) selected.set(sourceId, { sourceId, snapshot });
+    else if (snapshot.revision === current.snapshot.revision && snapshotDigest(snapshot) !== snapshotDigest(current.snapshot)) throw new Error('snapshot revision conflict');
   }
   return expectedSourceIds.map((id) => selected.get(id)).filter(Boolean);
 }

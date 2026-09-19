@@ -1,4 +1,5 @@
 const PRIVATE_KEYS = ['schemaVersion', 'sourceId', 'revision', 'policyId', 'collectedAt', 'timezone', 'window', 'days'];
+const PRIVATE_V3_KEYS = PRIVATE_KEYS.filter((key) => key !== 'sourceId');
 const PUBLIC_KEYS = ['schemaVersion', 'metricScope', 'timezone', 'window', 'asOfDate', 'completeThroughDate', 'status', 'summary', 'days'];
 const PROFILE_PUBLIC_KEYS = [...PUBLIC_KEYS, 'aggregation'];
 const DAY_KEYS = ['date', 'active', 'activeSessions', 'toolCalls', 'coverage'];
@@ -118,9 +119,10 @@ function parseSurfacePublicDays(value, window) {
 }
 
 export function parsePrivateSnapshot(value) {
-  exactKeys(value, PRIVATE_KEYS, 'private snapshot');
+  object(value, 'private snapshot');
   if (![1, 2, 3].includes(value.schemaVersion)) throw new Error('unsupported private schema');
-  if (typeof value.sourceId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.sourceId)) throw new Error('invalid sourceId');
+  exactKeys(value, value.schemaVersion === 3 ? PRIVATE_V3_KEYS : PRIVATE_KEYS, 'private snapshot');
+  if (value.schemaVersion !== 3 && (typeof value.sourceId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.sourceId))) throw new Error('invalid sourceId');
   if (!Number.isSafeInteger(value.revision) || value.revision < 1) throw new Error('invalid revision');
   if (value.policyId !== 'local-codex-v1-kst-exclude-profile') throw new Error('invalid policyId');
   if (value.timezone !== 'Asia/Seoul') throw new Error('invalid timezone');
@@ -128,7 +130,7 @@ export function parsePrivateSnapshot(value) {
   const window = parseWindow(value.window);
   if (value.schemaVersion === 3 && addDays(window.from, 29) !== window.to) throw new Error('private v3 window must contain 30 days');
   const days = parseDays(value.days, window, value.schemaVersion);
-  return { schemaVersion: value.schemaVersion, sourceId: value.sourceId, revision: value.revision, policyId: value.policyId, collectedAt: new Date(value.collectedAt).toISOString(), timezone: value.timezone, window, days };
+  return { schemaVersion: value.schemaVersion, ...(value.schemaVersion === 3 ? {} : { sourceId: value.sourceId }), revision: value.revision, policyId: value.policyId, collectedAt: new Date(value.collectedAt).toISOString(), timezone: value.timezone, window, days };
 }
 
 export function parsePublicActivity(value) {

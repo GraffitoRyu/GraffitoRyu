@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { parseDate, parsePrivateSnapshot } from './contract.mjs';
+import { parseDate } from './contract.mjs';
 import { withPublisherLock } from './publish.mjs';
 import { atomicWrite, chooseLatestSnapshots } from './snapshot.mjs';
 
@@ -26,11 +26,12 @@ export function publicationDecision({ snapshots, expectedSourceIds, now, receipt
   if (clock.hour < 8) return { status: 'before-window', date: clock.date };
   if (receipt && parseReceipt(receipt).date === clock.date) return { status: 'already-published', date: clock.date };
   const selected = chooseLatestSnapshots(snapshots, expectedSourceIds);
-  const versions = new Set(selected.map(({ schemaVersion }) => schemaVersion));
-  if (selected.length !== expectedSourceIds.length || versions.size !== 1 || ![2, 3].includes(selected[0]?.schemaVersion) || selected.some((snapshot) => snapshot.window.to !== clock.date)) return { status: 'awaiting-source', date: clock.date };
-  if (selected.some((snapshot) => new Date(snapshot.collectedAt) > clock.instant)) throw new Error('future snapshot');
-  if (selected.some((snapshot) => clock.instant - new Date(snapshot.collectedAt) > staleAfterHours * 3600000)) return { status: 'awaiting-source', date: clock.date };
-  return { status: 'ready', date: clock.date, snapshots: selected.map(parsePrivateSnapshot) };
+  const selectedSnapshots = selected.map(({ snapshot }) => snapshot);
+  const versions = new Set(selectedSnapshots.map(({ schemaVersion }) => schemaVersion));
+  if (selected.length !== expectedSourceIds.length || versions.size !== 1 || ![2, 3].includes(selectedSnapshots[0]?.schemaVersion) || selectedSnapshots.some((snapshot) => snapshot.window.to !== clock.date)) return { status: 'awaiting-source', date: clock.date };
+  if (selectedSnapshots.some((snapshot) => new Date(snapshot.collectedAt) > clock.instant)) throw new Error('future snapshot');
+  if (selectedSnapshots.some((snapshot) => clock.instant - new Date(snapshot.collectedAt) > staleAfterHours * 3600000)) return { status: 'awaiting-source', date: clock.date };
+  return { status: 'ready', date: clock.date, snapshots: selected };
 }
 
 export function publicationReceipt({ date, result }) {

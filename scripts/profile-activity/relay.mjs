@@ -55,7 +55,7 @@ export function acceptAcknowledgement({ acknowledgement, state }) {
 
 export async function receiveEnvelope({ envelope: input, expectedSourceId, lastGoodFile, stateScope }) {
   const envelope = parseEnvelope(input);
-  if (envelope.snapshot.sourceId !== expectedSourceId) throw new Error('unregistered source');
+  if (envelope.snapshot.schemaVersion !== 3 && envelope.snapshot.sourceId !== expectedSourceId) throw new Error('unregistered source');
   let current = null;
   try { current = await readSnapshot(lastGoodFile, stateScope); } catch (error) {
     if (error.code !== 'ENOENT') throw error;

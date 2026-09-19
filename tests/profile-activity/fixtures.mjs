@@ -84,7 +84,6 @@ export function makeV3Days({
 export function makeV3Snapshot({ sourceId = SOURCE_A, revision = 1, collectedAt = '2026-09-13T09:00:00.000Z', ...dayOptions } = {}) {
   return {
     schemaVersion: 3,
-    sourceId,
     revision,
     policyId: 'local-codex-v1-kst-exclude-profile',
     collectedAt,
@@ -92,6 +91,10 @@ export function makeV3Snapshot({ sourceId = SOURCE_A, revision = 1, collectedAt 
     window: { from: '2026-08-15', to: '2026-09-13' },
     days: makeV3Days(dayOptions),
   };
+}
+
+export function makeV3Input({ sourceId = SOURCE_A, ...snapshotOptions } = {}) {
+  return { sourceId, snapshot: makeV3Snapshot(snapshotOptions) };
 }
 
 export function rolloutLines({ id = 'session-a', cwd = '/work/project', events = [] } = {}) {
