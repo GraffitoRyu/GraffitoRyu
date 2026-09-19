@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
+import { COLLECTION_PATHS } from './collection.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -28,11 +29,14 @@ export function parseConfig(value) {
   });
   if (new Set(expectedSources.map(({ sourceId }) => sourceId)).size !== expectedSources.length) throw new Error('duplicate expected source');
   if (expectedSources.some(({ location }) => location === 'transport') && value.transportDir === null) throw new Error('transport source without transportDir');
-  if (value.role === 'publisher' && (expectedSources.length !== 2 || !expectedSources.some(({ sourceId }) => sourceId === value.sourceId))) throw new Error('publisher requires two sources including itself');
+  const directPublication = value.publisher?.collectionPath !== undefined;
+  if (value.role === 'publisher' && !directPublication && (expectedSources.length !== 2 || !expectedSources.some(({ sourceId }) => sourceId === value.sourceId))) throw new Error('publisher requires two sources including itself');
+  if (directPublication && (value.transportDir !== null || expectedSources.length !== 0)) throw new Error('direct publication cannot use transport sources');
   if (typeof value.independentSources !== 'boolean') throw new Error('invalid independentSources');
-  if (value.role === 'publisher') {
-    keys(value.publisher, ['repoDir', 'remote', 'branch', 'candidateRoot', 'retryLimit', 'hooksPath', 'hooksManifest'], 'publisher');
+  if (value.publisher !== undefined) {
+    keys(value.publisher, ['repoDir', 'remote', 'branch', 'candidateRoot', 'retryLimit', 'hooksPath', 'hooksManifest', 'collectionPath'], 'publisher');
     if (typeof value.publisher.remote !== 'string' || typeof value.publisher.branch !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(value.publisher.branch) || value.publisher.branch.includes('..') || !Number.isSafeInteger(value.publisher.retryLimit) || value.publisher.retryLimit < 0 || value.publisher.retryLimit > 2 || typeof value.publisher.hooksPath !== 'string' || (value.publisher.hooksPath !== '' && !path.isAbsolute(value.publisher.hooksPath))) throw new Error('invalid publisher');
+    if (value.publisher.collectionPath !== undefined && !COLLECTION_PATHS.includes(value.publisher.collectionPath)) throw new Error('invalid collectionPath');
     if (value.publisher.hooksManifest !== undefined) {
       if (!value.publisher.hooksManifest || typeof value.publisher.hooksManifest !== 'object' || Array.isArray(value.publisher.hooksManifest)) throw new Error('invalid hooksManifest');
       for (const [name, entry] of Object.entries(value.publisher.hooksManifest)) {
@@ -41,13 +45,12 @@ export function parseConfig(value) {
         if (!/^[0-9a-f]{64}$/.test(entry.digest) || !Number.isSafeInteger(entry.mode) || entry.mode < 0 || entry.mode > 0o777) throw new Error('invalid hook entry');
       }
     }
-    if (value.launchAgent !== undefined) throw new Error('publisher cannot own collector launch agent');
-  } else {
-    if (value.publisher !== undefined) throw new Error('collector cannot publish');
-    if (value.launchAgent !== undefined) {
-      keys(value.launchAgent, ['label', 'plistFile'], 'launchAgent');
-      if (value.launchAgent.label !== 'com.graffitoryu.profile-activity.collector') throw new Error('invalid launchAgent label');
-    }
+  }
+  if (value.role === 'publisher' && !value.publisher) throw new Error('publisher config required');
+  if (value.launchAgent !== undefined) {
+    if (value.role !== 'collector') throw new Error('publisher cannot own collector launch agent');
+    keys(value.launchAgent, ['label', 'plistFile'], 'launchAgent');
+    if (value.launchAgent.label !== 'com.graffitoryu.profile-activity.collector') throw new Error('invalid launchAgent label');
   }
   const codexHome = absolute(value.codexHome, 'codexHome');
   const logRoots = value.logRoots.map((item) => absolute(item, 'logRoot'));

@@ -137,3 +137,21 @@ export function aggregateSnapshots(inputs, options) {
     days,
   });
 }
+
+export function aggregateCollections(collections, options) {
+  const ids = ['public-collection-a', 'public-collection-b'];
+  const collectedAt = new Date(options.referenceTime).toISOString();
+  const snapshots = collections.map((collection, index) => ({
+    sourceId: ids[index],
+    snapshot: {
+      schemaVersion: 3,
+      revision: 1,
+      policyId: 'local-codex-v1-kst-exclude-profile',
+      collectedAt,
+      timezone: collection.timezone,
+      window: collection.window,
+      days: collection.days,
+    },
+  }));
+  return aggregateSnapshots(snapshots, { ...options, expectedSourceIds: ids, independentSources: true });
+}

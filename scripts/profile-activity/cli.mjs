@@ -5,6 +5,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 let addDays;
+let activityCollectionFromSnapshot;
+let aggregateCollections;
+let currentActivityCollections;
 let parseAccountUsage;
 let processActivitySurface;
 let atomicWrite;
@@ -15,6 +18,7 @@ let parsePrivateSnapshot;
 let probeLogRoots;
 let publishGenerated;
 let publishGeneratedUnlocked;
+let publishOwnedCollection;
 let publishIfReady;
 let readConfig;
 let readSnapshot;
@@ -68,10 +72,12 @@ async function verifyBeforeImport(argv) {
 
 async function loadRuntime() {
   ({ parseAccountUsage, processActivitySurface } = await import('./account-usage.mjs'));
+  ({ aggregateCollections } = await import('./aggregate.mjs'));
+  ({ activityCollectionFromSnapshot, currentActivityCollections } = await import('./collection.mjs'));
   ({ collectLogRoots, probeLogRoots } = await import('./collect.mjs'));
   ({ readConfig } = await import('./config.mjs'));
   ({ addDays, isPublishableActivity, parseDate, parsePrivateSnapshot, stableJson } = await import('./contract.mjs'));
-  ({ publishGenerated, publishGeneratedUnlocked } = await import('./publish.mjs'));
+  ({ publishGenerated, publishGeneratedUnlocked, publishOwnedCollection } = await import('./publish.mjs'));
   ({ publishIfReady } = await import('./publication-gate.mjs'));
   ({ acceptAcknowledgement, nextDelivery, receiveEnvelope } = await import('./relay.mjs'));
   ({ failureEvidence: classifyFailure } = await import('./delivery-execution.mjs'));
@@ -180,6 +186,7 @@ async function main() {
   await loadRuntime();
   const args = argumentsFor(process.argv.slice(2));
   const config = await readConfig(args.configFile);
+  if (config.publisher?.collectionPath && ['outbox', 'acknowledge', 'receive'].includes(args.command)) throw new Error('relay command refused for direct publication');
   const asOfDate = args.asOfDate ?? todayKst();
   if (args.command === 'probe') {
     process.stdout.write(stableJson({ status: 'ok', ...(await probeLogRoots(config.logRoots)) }));
@@ -216,8 +223,8 @@ async function main() {
     process.stdout.write(stableJson({ status: 'acknowledged', revision: accepted.acknowledgedRevision, ...(accepted.envelope.schema === 'PROFILE_ACTIVITY_SNAPSHOT_V3' ? {} : { digest: accepted.acknowledgedDigest }) }));
     return;
   }
-  if (config.role !== 'publisher') throw new Error('publisher role required');
   if (args.command === 'receive') {
+    if (config.role !== 'publisher') throw new Error('publisher role required');
     const sources = config.expectedSources.filter(({ location, sourceId }) => location === 'transport' && sourceId !== config.sourceId);
     if (sources.length !== 1) throw new Error('single transport source required');
     const source = sources[0];
@@ -226,6 +233,7 @@ async function main() {
     process.stdout.write(stableJson(result));
     return;
   }
+  if (!config.publisher) throw new Error('publisher config required');
   let accountUsage = null;
   if (args.command === 'run' && process.argv.includes('--account-usage-stdin')) {
     accountUsage = parseAccountUsage(await readPrivateInput());
@@ -235,6 +243,40 @@ async function main() {
     }
   }
   const now = new Date().toISOString();
+  if (config.publisher?.collectionPath) {
+    const snapshot = await readSnapshot(path.join(config.stateDir, 'snapshot.json'), config.stateDir);
+    const collection = activityCollectionFromSnapshot(snapshot);
+    if (args.dryRun) {
+      process.stdout.write(stableJson({ status: 'dry-run', collectionStatus: 'valid' }));
+      return;
+    }
+    const receiptFile = path.join(config.stateDir, 'direct-publication-receipt.json');
+    try {
+      const receipt = JSON.parse(await readFile(receiptFile, 'utf8'));
+      if (!receipt || Object.keys(receipt).sort().join(',') !== 'collectedAt,date,schemaVersion' || receipt.schemaVersion !== 1 || parseDate(receipt.date) > asOfDate || Number.isNaN(Date.parse(receipt.collectedAt))) throw new Error('invalid direct publication receipt');
+      if (new Date(snapshot.collectedAt) <= new Date(receipt.collectedAt)) {
+        process.stdout.write(stableJson({ status: 'already-published', date: receipt.date }));
+        return;
+      }
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    if (stateChanged === false) stateChanged = 'unknown';
+    const result = await publishOwnedCollection(config, collection, {
+      referenceTime: now,
+      buildFinal: async (values) => {
+        const current = currentActivityCollections(values, asOfDate);
+        if (current === null) return null;
+        const activity = aggregateCollections(current, { asOfDate, referenceTime: now, staleAfterHours: config.staleAfterHours });
+        if (!isPublishableActivity(activity)) return null;
+        return { 'metrics/codex-activity.json': stableJson(activity), 'assets/codex-activity.svg': renderActivitySvg(activity) };
+      },
+    });
+    await atomicWrite(receiptFile, { schemaVersion: 1, date: asOfDate, collectedAt: snapshot.collectedAt }, config.stateDir);
+    stateChanged = true;
+    process.stdout.write(stableJson(result));
+    return;
+  }
   const snapshots = await publisherSnapshots(config);
   if (args.dryRun) {
     const { activity } = processActivitySurface(snapshots, { asOfDate, referenceTime: now, expectedSourceIds: config.expectedSources.map(({ sourceId }) => sourceId), independentSources: config.independentSources, staleAfterHours: config.staleAfterHours }, accountUsage);
