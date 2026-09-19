@@ -13,6 +13,7 @@ import { collectorPlist } from '../../scripts/profile-activity/install-local.mjs
 import { assertAllowedPaths, publishGenerated, verifyRuntimeManifest, withPublisherLock } from '../../scripts/profile-activity/publish.mjs';
 import { publicationDecision, publicationReceipt, publishIfReady } from '../../scripts/profile-activity/publication-gate.mjs';
 import { acceptAcknowledgement, createEnvelope, nextDelivery, parseEnvelope, receiveEnvelope } from '../../scripts/profile-activity/relay.mjs';
+import * as deliveryExecution from '../../scripts/profile-activity/delivery-execution.mjs';
 import { renderActivitySvg } from '../../scripts/profile-activity/render.mjs';
 import { chooseLatestSnapshots, readSnapshot, saveAndExportSnapshot } from '../../scripts/profile-activity/snapshot.mjs';
 import { SOURCE_A, SOURCE_B, call, makePublicActivity, makeSnapshot, message, rolloutLines } from './fixtures.mjs';
@@ -52,8 +53,33 @@ async function installedCollectorFixture() {
     runtimeDir, runtimeManifest, excludedRepoRoots: [], expectedSources: [], independentSources: false, publicDays: 30, retentionDays: 90, staleAfterHours: 48, timezone: 'Asia/Seoul',
   });
   await writeFile(config, configText);
-  await writeFile(path.join(stateDir, 'installation-receipt.json'), stableJson({ schemaVersion: 1, sourceCommit: 'a'.repeat(40), stateDir, runtimeDir, runtimeDigest, runtimeManifestDigest: runtimeDigest, installedConfigDigest: createHash('sha256').update(configText).digest('hex') }));
-  return { root, runtimeDir, stateDir, config, cli: path.join(runtimeDir, 'cli.mjs') };
+  const receiptFile = path.join(stateDir, 'installation-receipt.json');
+  await writeFile(receiptFile, stableJson({ schemaVersion: 1, sourceCommit: 'a'.repeat(40), stateDir, runtimeDir, runtimeDigest, runtimeManifestDigest: runtimeDigest, installedConfigDigest: createHash('sha256').update(configText).digest('hex'), nodeBinary: process.execPath }));
+  return { root, runtimeDir, stateDir, config, receiptFile, cli: path.join(runtimeDir, 'cli.mjs'), delivery: path.join(runtimeDir, 'delivery-execution.mjs') };
+}
+
+async function installedPublisherFixture() {
+  const root = await temp();
+  const stateDir = path.join(root, 'state');
+  const logs = path.join(root, 'logs');
+  const runtimeSource = path.resolve('scripts/profile-activity');
+  const runtimeManifest = {};
+  for (const name of (await readdir(runtimeSource)).filter((item) => item.endsWith('.mjs')).sort()) runtimeManifest[name] = createHash('sha256').update(await readFile(path.join(runtimeSource, name))).digest('hex');
+  const runtimeDigest = createHash('sha256').update(stableJson(runtimeManifest)).digest('hex');
+  const runtimeDir = path.join(root, runtimeDigest);
+  await cp(runtimeSource, runtimeDir, { recursive: true });
+  await mkdir(stateDir);
+  await mkdir(logs);
+  const config = path.join(stateDir, 'installed-config.json');
+  const configText = stableJson({
+    schemaVersion: 1, role: 'publisher', sourceId: SOURCE_B, policyId: 'local-codex-v1-kst-exclude-profile', codexHome: root, logRoots: [logs], stateDir, transportDir: root,
+    runtimeDir, runtimeManifest, excludedRepoRoots: [], expectedSources: [{ sourceId: SOURCE_B, location: 'local', file: path.join(root, 'self.json') }, { sourceId: SOURCE_A, location: 'transport', file: path.join(root, 'remote.json') }], independentSources: true, publicDays: 30, retentionDays: 90, staleAfterHours: 48, timezone: 'Asia/Seoul',
+    publisher: { repoDir: root, remote: 'synthetic', branch: 'main', candidateRoot: path.join(root, 'candidates'), retryLimit: 0, hooksPath: '', hooksManifest: {} },
+  });
+  await writeFile(config, configText);
+  const receiptFile = path.join(stateDir, 'installation-receipt.json');
+  await writeFile(receiptFile, stableJson({ schemaVersion: 1, sourceCommit: 'a'.repeat(40), stateDir, runtimeDir, runtimeDigest, runtimeManifestDigest: runtimeDigest, installedConfigDigest: createHash('sha256').update(configText).digest('hex'), nodeBinary: process.execPath }));
+  return { root, runtimeDir, stateDir, config, receiptFile, cli: path.join(runtimeDir, 'cli.mjs'), delivery: path.join(runtimeDir, 'delivery-execution.mjs') };
 }
 
 async function collectFiles(files, extra = {}) {
@@ -209,6 +235,128 @@ test('T56 installed outbox and acknowledge persist private sender state', async 
   const acknowledged = JSON.parse((await runWithInput(process.execPath, [fixture.cli, 'acknowledge', '--config', fixture.config], stableJson({ status: 'received', revision: first.envelope.revision, digest: first.envelope.digest }))).stdout);
   assert.equal(acknowledged.status, 'acknowledged');
   assert.equal(JSON.parse((await run(process.execPath, [fixture.cli, 'outbox', '--config', fixture.config])).stdout).status, 'acknowledged');
+});
+
+test('T59 installed acknowledge uses one non-TTY execFile input and exact JSON output', async () => {
+  const fixture = await installedCollectorFixture();
+  await writeFile(path.join(fixture.stateDir, 'snapshot.json'), stableJson(insightSnapshot()));
+  const first = JSON.parse((await run(process.execPath, [fixture.cli, 'outbox', '--config', fixture.config])).stdout);
+  const invocation = deliveryExecution.createInstalledCliInvocation({
+    receiptFile: fixture.receiptFile,
+    command: 'acknowledge',
+    input: { status: 'received', revision: first.envelope.revision, digest: first.envelope.digest },
+    pendingEnvelope: first.envelope,
+  });
+
+  assert.equal(invocation.run().status, 'acknowledged');
+  assert.throws(() => invocation.run(), /already started/);
+  assert.equal(JSON.parse((await run(process.execPath, [fixture.cli, 'outbox', '--config', fixture.config])).stdout).status, 'acknowledged');
+});
+
+test('T60 delivery CLI output and acknowledgement shapes are exact', () => {
+  const envelope = createEnvelope(insightSnapshot());
+  const acknowledgement = { status: 'received', revision: envelope.revision, digest: envelope.digest };
+  assert.equal(deliveryExecution.parseDeliveryCliOutput('receive', stableJson(acknowledgement), envelope).status, 'received');
+  assert.throws(() => deliveryExecution.parseDeliveryCliOutput('receive', stableJson({ ...acknowledgement, extra: true }), envelope), /keys/);
+  assert.throws(() => deliveryExecution.parseDeliveryCliOutput('receive', '{"status":"received"}', envelope));
+  assert.throws(() => acceptAcknowledgement({ acknowledgement: { ...acknowledgement, extra: true }, state: nextDelivery({ snapshot: envelope.snapshot, state: null, date: '2026-09-19' }).state }), /keys/);
+});
+
+test('T61 delivery failures preserve only structured sanitized evidence', () => {
+  const evidence = deliveryExecution.failureEvidence({
+    stage: 'acknowledge',
+    error: Object.assign(new Error('PRIVATE-PATH-CANARY PRIVATE-DIGEST-CANARY'), { code: 'EACCES' }),
+    stateChanged: false,
+  });
+  assert.deepEqual(evidence, { status: 'error', stage: 'acknowledge', exitCode: null, signal: null, errorClass: 'permission', stderrClass: 'permission-denied', stateChanged: false });
+  assert.doesNotMatch(stableJson(evidence), /PRIVATE|PATH|DIGEST/);
+});
+
+test('T62 retry approval is not accepted as forgeable invocation data', async () => {
+  const fixture = await installedCollectorFixture();
+  assert.throws(() => deliveryExecution.createInstalledCliInvocation({ receiptFile: fixture.receiptFile, command: 'outbox', previousFailure: { stage: 'outbox' }, authority: { kind: 'user', retryApproved: true } }), /invalid invocation keys/);
+});
+
+test('T63 CLI failures emit structured sanitized evidence at the command stage', async () => {
+  const fixture = await installedCollectorFixture();
+  await writeFile(path.join(fixture.stateDir, 'snapshot.json'), stableJson(insightSnapshot()));
+  await run(process.execPath, [fixture.cli, 'outbox', '--config', fixture.config]);
+  await assert.rejects(
+    runWithInput(process.execPath, [fixture.cli, 'acknowledge', '--config', fixture.config], stableJson({ status: 'received', extra: 'PRIVATE-PATH-CANARY' })),
+    (error) => {
+      const evidence = JSON.parse(error.stderr);
+      assert.deepEqual(evidence, { status: 'error', stage: 'acknowledge', exitCode: 1, signal: null, errorClass: 'validation', stderrClass: 'validation-rejected', stateChanged: false });
+      assert.doesNotMatch(error.stderr, /PRIVATE|PATH|CANARY/);
+      return true;
+    },
+  );
+});
+
+test('T64 invocation preserves the CLI sanitized failure without raw subprocess output', async () => {
+  const fixture = await installedCollectorFixture();
+  await writeFile(path.join(fixture.stateDir, 'snapshot.json'), stableJson(insightSnapshot()));
+  const first = JSON.parse((await run(process.execPath, [fixture.cli, 'outbox', '--config', fixture.config])).stdout);
+  const invocation = deliveryExecution.createInstalledCliInvocation({
+    receiptFile: fixture.receiptFile,
+    command: 'acknowledge',
+    input: { status: 'received', revision: first.envelope.revision, digest: first.envelope.digest, extra: 'PRIVATE-PATH-CANARY' },
+    pendingEnvelope: first.envelope,
+  });
+  assert.throws(() => invocation.run(), (error) => {
+    assert.deepEqual(error.evidence, { status: 'error', stage: 'acknowledge', exitCode: 1, signal: null, errorClass: 'validation', stderrClass: 'validation-rejected', stateChanged: false });
+    assert.equal(Object.hasOwn(error, 'stderr'), false);
+    assert.equal(Object.hasOwn(error, 'stdout'), false);
+    return true;
+  });
+});
+
+test('T65 installed delivery entrypoint acknowledges through receipt-pinned Node', async () => {
+  const fixture = await installedCollectorFixture();
+  await writeFile(path.join(fixture.stateDir, 'snapshot.json'), stableJson(insightSnapshot()));
+  const first = JSON.parse((await run(process.execPath, [fixture.cli, 'outbox', '--config', fixture.config])).stdout);
+  const result = JSON.parse((await runWithInput(process.execPath, [fixture.delivery, 'acknowledge', '--receipt', fixture.receiptFile], stableJson({ status: 'received', revision: first.envelope.revision, digest: first.envelope.digest }))).stdout);
+  assert.equal(result.status, 'acknowledged');
+});
+
+test('T66 receiver entrypoint runs receive then one gated publication check', async () => {
+  const fixture = await installedPublisherFixture();
+  const envelope = createEnvelope(insightSnapshot({ sourceId: SOURCE_A }));
+  const result = JSON.parse((await runWithInput(process.execPath, [fixture.delivery, 'receive-run', '--receipt', fixture.receiptFile], stableJson(envelope))).stdout);
+  assert.deepEqual(result.acknowledgement, { status: 'received', revision: envelope.revision, digest: envelope.digest });
+  assert.equal(result.publication.status, 'awaiting-source');
+  assert.equal((await readSnapshot(path.join(fixture.stateDir, `last-good-${SOURCE_A}.json`), fixture.stateDir)).revision, envelope.revision);
+});
+
+test('T67 delivery errors preserve non-default exit status and signal fields', () => {
+  assert.deepEqual(deliveryExecution.failureEvidence({ stage: 'run', error: { status: 7 }, stateChanged: 'unknown' }), { status: 'error', stage: 'run', exitCode: 7, signal: null, errorClass: 'execution', stderrClass: 'execution-failed', stateChanged: 'unknown' });
+  assert.deepEqual(deliveryExecution.failureEvidence({ stage: 'run', error: { signal: 'SIGTERM' }, stateChanged: 'unknown' }).signal, 'SIGTERM');
+});
+
+test('T68 CLI startup validation is distinct from runtime integrity failure', async () => {
+  const fixture = await installedCollectorFixture();
+  await assert.rejects(run(process.execPath, [fixture.cli, 'outbox']), (error) => {
+    assert.deepEqual(JSON.parse(error.stderr), { status: 'error', stage: 'outbox', exitCode: 1, signal: null, errorClass: 'validation', stderrClass: 'validation-rejected', stateChanged: false });
+    return true;
+  });
+});
+
+test('T69 invocation uses receipt-pinned Node and accepts bounded large stdout', async () => {
+  const fixture = await installedCollectorFixture();
+  const pinnedNode = path.join(fixture.root, 'pinned-node');
+  await writeFile(pinnedNode, `#!${process.execPath}\nprocess.stdout.write(' '.repeat(1100000) + '{"status":"no-op"}\\n');\n`);
+  await chmod(pinnedNode, 0o700);
+  const receipt = JSON.parse(await readFile(fixture.receiptFile, 'utf8'));
+  await writeFile(fixture.receiptFile, stableJson({ ...receipt, nodeBinary: pinnedNode }));
+  assert.equal(deliveryExecution.createInstalledCliInvocation({ receiptFile: fixture.receiptFile, command: 'run' }).run().status, 'no-op');
+});
+
+test('T70 multi-write run failure reports state change as unknown', async () => {
+  const fixture = await installedPublisherFixture();
+  await mkdir(path.join(fixture.stateDir, 'snapshot.json'));
+  await assert.rejects(run(process.execPath, [fixture.cli, 'run', '--config', fixture.config]), (error) => {
+    assert.equal(JSON.parse(error.stderr).stateChanged, 'unknown');
+    return true;
+  });
 });
 
 test('T57 receive-triggered and 08:00 gates publish at most once', async () => {

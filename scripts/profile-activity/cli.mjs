@@ -22,6 +22,15 @@ let acceptAcknowledgement;
 let receiveEnvelope;
 let saveAndExportSnapshot;
 let stableJson;
+let classifyFailure;
+let executionStage = 'startup';
+let stateChanged = false;
+
+function startupFailure(error) {
+  const permission = ['EACCES', 'EPERM'].includes(error?.code);
+  const validation = !permission && /invalid|usage|required|refused/i.test(error?.message ?? '');
+  return { status: 'error', stage: executionStage, exitCode: 1, signal: null, errorClass: permission ? 'permission' : validation ? 'validation' : 'integrity', stderrClass: permission ? 'permission-denied' : validation ? 'validation-rejected' : 'integrity-rejected', stateChanged };
+}
 
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
@@ -63,6 +72,7 @@ async function loadRuntime() {
   ({ publishGenerated, publishGeneratedUnlocked } = await import('./publish.mjs'));
   ({ publishIfReady } = await import('./publication-gate.mjs'));
   ({ acceptAcknowledgement, nextDelivery, receiveEnvelope } = await import('./relay.mjs'));
+  ({ failureEvidence: classifyFailure } = await import('./delivery-execution.mjs'));
   ({ renderActivitySvg } = await import('./render.mjs'));
   ({ atomicWrite, readSnapshot, saveAndExportSnapshot } = await import('./snapshot.mjs'));
 }
@@ -169,6 +179,8 @@ async function publisherSnapshots(config, selfSnapshot) {
 }
 
 async function main() {
+  const requestedCommand = process.argv[2];
+  if (['probe', 'collect', 'refresh', 'run', 'outbox', 'acknowledge', 'receive'].includes(requestedCommand)) executionStage = requestedCommand;
   await verifyBeforeImport(process.argv.slice(2));
   await loadRuntime();
   const args = argumentsFor(process.argv.slice(2));
@@ -179,7 +191,9 @@ async function main() {
     return;
   }
   if (args.command === 'collect') {
+    if (!args.dryRun) stateChanged = 'unknown';
     const result = await collect(config, asOfDate, args.dryRun);
+    stateChanged = !args.dryRun;
     process.stdout.write(stableJson({ status: args.dryRun ? 'dry-run' : 'collected', ...result.summary }));
     return;
   }
@@ -193,6 +207,7 @@ async function main() {
     }
     const result = nextDelivery({ snapshot, state, date: todayKst() });
     await atomicWrite(stateFile, result.state, config.stateDir);
+    stateChanged = true;
     process.stdout.write(stableJson({ status: result.status, ...(result.envelope && { envelope: result.envelope }) }));
     return;
   }
@@ -202,6 +217,7 @@ async function main() {
     const state = JSON.parse(await readFile(stateFile, 'utf8'));
     const accepted = acceptAcknowledgement({ acknowledgement: await readPrivateInput(), state });
     await atomicWrite(stateFile, accepted, config.stateDir);
+    stateChanged = true;
     process.stdout.write(stableJson({ status: 'acknowledged', revision: accepted.acknowledgedRevision, digest: accepted.acknowledgedDigest }));
     return;
   }
@@ -211,21 +227,27 @@ async function main() {
     if (sources.length !== 1) throw new Error('single transport source required');
     const source = sources[0];
     const result = await receiveEnvelope({ envelope: await readPrivateInput(), expectedSourceId: source.sourceId, lastGoodFile: path.join(config.stateDir, `last-good-${source.sourceId}.json`), stateScope: config.stateDir });
+    stateChanged = result.status === 'received';
     process.stdout.write(stableJson(result));
     return;
   }
+  if (args.command === 'run' && !args.dryRun) stateChanged = 'unknown';
   const collected = args.command === 'run' ? await collect(config, asOfDate, args.dryRun) : { snapshot: null };
+  if (args.command === 'run' && !args.dryRun) stateChanged = true;
   if (args.dryRun) {
     const activity = await aggregate(config, collected.snapshot, asOfDate, false);
     const generated = { 'metrics/codex-activity.json': stableJson(activity), 'assets/codex-activity.svg': renderActivitySvg(activity) };
     await publishGenerated(config, generated, { dryRun: true });
+    stateChanged = 'unknown';
     await atomicWrite(path.join(config.stateDir, 'preview.json'), generated['metrics/codex-activity.json'], config.stateDir);
     await atomicWrite(path.join(config.stateDir, 'preview.svg'), generated['assets/codex-activity.svg'], config.stateDir);
+    stateChanged = true;
     process.stdout.write(stableJson({ status: 'dry-run', aggregateStatus: activity.status }));
     return;
   }
   const now = new Date().toISOString();
   const snapshots = await publisherSnapshots(config, collected.snapshot);
+  if (stateChanged === false) stateChanged = 'unknown';
   const result = await publishIfReady({
     config,
     snapshots,
@@ -241,7 +263,10 @@ async function main() {
   process.stdout.write(stableJson(result));
 }
 
-main().catch(() => {
-  process.stderr.write('{"status":"error"}\n');
+main().catch((error) => {
+  const evidence = classifyFailure
+    ? classifyFailure({ stage: executionStage, error, stateChanged, exitCode: 1 })
+    : startupFailure(error);
+  process.stderr.write(`${JSON.stringify(evidence)}\n`);
   process.exitCode = 1;
 });

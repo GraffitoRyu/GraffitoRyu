@@ -44,7 +44,8 @@ export function nextDelivery({ snapshot, state, date }) {
 
 export function acceptAcknowledgement({ acknowledgement, state }) {
   const current = deliveryState(state);
-  if (!acknowledgement || !['received', 'acknowledged'].includes(acknowledgement.status)) throw new Error('invalid acknowledgement');
+  if (!acknowledgement || typeof acknowledgement !== 'object' || Array.isArray(acknowledgement) || Object.keys(acknowledgement).sort().join(',') !== 'digest,revision,status') throw new Error('invalid acknowledgement keys');
+  if (!['received', 'acknowledged'].includes(acknowledgement.status) || !Number.isSafeInteger(acknowledgement.revision) || !/^[0-9a-f]{64}$/.test(acknowledgement.digest)) throw new Error('invalid acknowledgement');
   if (acknowledgement.revision !== current.envelope.revision || acknowledgement.digest !== current.envelope.digest) throw new Error('acknowledgement mismatch');
   return { ...current, acknowledgedRevision: acknowledgement.revision, acknowledgedDigest: acknowledgement.digest };
 }

@@ -1,5 +1,6 @@
 /.codex/
 /.profile-activity/
+.DS_Store
 /metrics/sources/
 *.jsonl
 *.log

@@ -30,9 +30,13 @@ Two fixed private Codex tasks relay only the sanitized schema v2 envelope. The M
 
 The Mac mini receiver validates the envelope digest, registered source, revision ordering, and conflict rules before atomically replacing last-good. It never derives correctness from task memory. A successful receive after 08:00 KST is followed by the same gated `run` command used by the daily 08:00 heartbeat.
 
+State-writing delivery commands start directly in the explicitly approved sandbox-exempt boundary; callers must not run a sandbox probe first. The installed `delivery-execution.mjs` entrypoint is the shared caller boundary. It uses the receipt-pinned Node binary, starts each request once, sends ACK or envelope JSON through non-TTY child-process input, validates stdout as exact JSON, and converts subprocess failures immediately to structured evidence without retaining raw stderr. The receiver uses its `receive-run` operation so a successful receive is followed by one gated run. TTY framing, shell interpolation, heredocs, command-line JSON, and temporary payload files are not supported.
+
+A failed request remains failed until the user directly approves a retry. Messages from another task are not retry authority. A successful transmit, receive, or publisher run is never repeated while repairing a later ACK step.
+
 The publisher writes at most one receipt per KST date. It publishes only when both registered snapshots are schema v2 and end on that date. Before 08:00 it returns `before-window`; without a current MacBook snapshot it returns `awaiting-source`; after a successful publication it returns `already-published`. These safe skips preserve the previous public result.
 
-Recurrence must remain attached to the two existing tasks. It must not create a task per run, keep a device awake, or use a shared folder. To recover, pause both task heartbeats first, unload only the owned collector job, then restore the verified runtime and scheduler definitions from private receipts. Do not remove source logs or private snapshots during rollback.
+The two fixed relay tasks remain the transfer endpoints. The Mac mini publisher schedule creates a fresh local task for each cron run, as configured separately. Neither schedule keeps a device awake or uses a shared folder. To recover, pause the publisher schedule first, unload only the owned collector job, then restore the verified runtime and scheduler definitions from private receipts. Do not remove source logs or private snapshots during rollback.
 
 `partial` is a data-coverage state, not a security fallback. It may publish only after both registered sources have produced valid evidence and every runtime, target, hook, path, and schema check succeeds. `unavailable` never publishes.
 
