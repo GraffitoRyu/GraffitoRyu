@@ -106,7 +106,7 @@ The repository stores two sanitized collection surfaces:
 
 These are public collection inputs, not private device snapshots. Their fixed filenames bind the collection slot; their JSON bodies contain no source or device identifier and no stable digest. Each file contains only the validated anonymous 30-day schema v3 surface described above.
 
-MacBook may update only the MacBook collection, and Mac mini may update only the Mac mini collection. Their schedules are non-overlapping. Before publishing, each device fetches the latest remote state, replaces only its collection, and runs visualization against both repository collections. A non-fast-forward update re-fetches and recomputes from the new remote state within the existing bounded retry policy; it never force-pushes.
+MacBook may update only the MacBook collection. Mac mini may update only the Mac mini collection and, as the sole renderer, may update the existing merged JSON/SVG pair. Their schedules are non-overlapping. Before publishing, each device fetches the latest remote state and replaces only its collection; the later Mac mini run visualizes both repository collections. A non-fast-forward update re-fetches and recomputes from the new remote state within the existing bounded retry policy; it never force-pushes.
 
 No envelope, receive, acknowledgement, shared transport directory, or task-to-task payload participates in the active workflow. Existing relay state is ignored during rollout and is not migrated into a repository collection.
 

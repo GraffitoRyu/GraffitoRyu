@@ -4,7 +4,7 @@
 
 **Goal:** Let MacBook and Mac mini publish separate anonymous 30-day collection files directly to the repository and merge them only when rendering the public activity surface.
 
-**Architecture:** Each installed collector keeps raw parsing and private cache local, writes only its fixed sanitized repository collection, then renders from the latest two collection files. The active workflow has no envelope, receive, acknowledgement, or cross-device payload; Git serialization and non-overlapping schedules coordinate the two independent publishers.
+**Architecture:** Each installed collector keeps raw parsing and private cache local and writes only its fixed sanitized repository collection. Mac mini runs later as the sole renderer, merging the latest two collection files into the existing public JSON/SVG pair. The active workflow has no envelope, receive, acknowledgement, or cross-device payload; Git serialization and non-overlapping schedules coordinate the two independent publishers.
 
 **Tech Stack:** Node.js ESM, Node standard library, `node:test`, Git
 
@@ -14,7 +14,7 @@
 
 - MacBook writes only `metrics/codex-activity-macbook.json`; Mac mini writes only `metrics/codex-activity-macmini.json`.
 - Collection bodies contain schema v3 anonymous aggregate fields only; the filename binds the slot.
-- Only visualization reads both collection files; neither device reads the other device's logs or private state.
+- Only the Mac mini visualization step reads both repository collection files; neither device reads the other device's logs or private state.
 - The merged output remains `metrics/codex-activity.json` and `assets/codex-activity.svg`.
 - Missing, stale, malformed, or mixed-schema collections preserve the previous merged output.
 - Raw JSONL is parsed only by the installed runtime and never enters model output, repository files, or diagnostics.
@@ -120,7 +120,7 @@ Expected: FAIL because publication accepts only the old generated-file pair and 
 
 - [ ] **Step 3: Implement direct publication**
 
-Add one installed command that collects the local scope once, creates the own repository collection, publishes that file, reads both repository collection files, and generates merged JSON/SVG only when both validate as current v3. Generalize the allowlist to the invoking slot plus the existing merged pair. Reuse the existing bounded non-fast-forward retry, but rerender from refreshed repository bytes without recollecting.
+Add one installed command that collects the local scope once and publishes its own repository collection. For MacBook, the allowlist is only its collection. For Mac mini, the allowlist is its collection plus the existing merged pair; it reads both repository collection files and generates merged JSON/SVG only when both validate as current v3. Reuse the existing bounded non-fast-forward retry, but rerender from refreshed repository bytes without recollecting.
 
 - [ ] **Step 4: Remove relay from the active CLI path**
 
