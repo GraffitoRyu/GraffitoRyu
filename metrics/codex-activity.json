@@ -10,7 +10,7 @@
   "completeThroughDate": null,
   "status": "partial",
   "summary": {
-    "activeDays": null,
+    "activeDays": 30,
     "sessionDays": null,
     "toolCalls": null
   },
@@ -220,10 +220,10 @@
     },
     {
       "date": "2026-09-19",
-      "active": null,
+      "active": true,
       "activeSessions": null,
       "toolCalls": null,
-      "coverage": "unknown"
+      "coverage": "partial"
     }
   ]
 }
