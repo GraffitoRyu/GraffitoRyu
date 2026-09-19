@@ -1,7 +1,7 @@
 # Profile activity direct communication design
 
 **Date:** 2026-09-19  
-**Status:** Pending written review
+**Status:** Approved
 
 ## Intent
 
