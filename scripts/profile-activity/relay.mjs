@@ -1,21 +1,24 @@
 import { parseDate, parsePrivateSnapshot } from './contract.mjs';
 import { atomicWrite, readSnapshot, snapshotDigest } from './snapshot.mjs';
 
-const SCHEMA = 'PROFILE_ACTIVITY_SNAPSHOT_V2';
+function schemaFor(version) {
+  if (![2, 3].includes(version)) throw new Error('schema v2 or v3 required');
+  return `PROFILE_ACTIVITY_SNAPSHOT_V${version}`;
+}
 
 export function createEnvelope(value) {
   const snapshot = parsePrivateSnapshot(value);
-  if (snapshot.schemaVersion !== 2) throw new Error('schema v2 required');
-  return { schema: SCHEMA, revision: snapshot.revision, digest: snapshotDigest(snapshot), snapshot };
+  return { schema: schemaFor(snapshot.schemaVersion), revision: snapshot.revision, digest: snapshotDigest(snapshot), snapshot };
 }
 
 export function parseEnvelope(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid envelope');
   if (Object.keys(value).sort().join(',') !== 'digest,revision,schema,snapshot') throw new Error('invalid envelope keys');
   const snapshot = parsePrivateSnapshot(value.snapshot);
-  if (value.schema !== SCHEMA || snapshot.schemaVersion !== 2 || value.revision !== snapshot.revision) throw new Error('invalid envelope identity');
+  const schema = schemaFor(snapshot.schemaVersion);
+  if (value.schema !== schema || value.revision !== snapshot.revision) throw new Error('invalid envelope identity');
   if (!/^[0-9a-f]{64}$/.test(value.digest) || value.digest !== snapshotDigest(snapshot)) throw new Error('digest mismatch');
-  return { schema: SCHEMA, revision: snapshot.revision, digest: value.digest, snapshot };
+  return { schema, revision: snapshot.revision, digest: value.digest, snapshot };
 }
 
 function deliveryState(value) {

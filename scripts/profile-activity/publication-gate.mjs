@@ -21,13 +21,15 @@ function parseReceipt(value) {
   return { schemaVersion: 1, date, status: value.status, commit: value.commit };
 }
 
-export function publicationDecision({ snapshots, expectedSourceIds, now, receipt }) {
+export function publicationDecision({ snapshots, expectedSourceIds, now, receipt, staleAfterHours = 36 }) {
   const clock = kstParts(now);
   if (clock.hour < 8) return { status: 'before-window', date: clock.date };
   if (receipt && parseReceipt(receipt).date === clock.date) return { status: 'already-published', date: clock.date };
   const selected = chooseLatestSnapshots(snapshots, expectedSourceIds);
+  const versions = new Set(selected.map(({ schemaVersion }) => schemaVersion));
+  if (selected.length !== expectedSourceIds.length || versions.size !== 1 || ![2, 3].includes(selected[0]?.schemaVersion) || selected.some((snapshot) => snapshot.window.to !== clock.date)) return { status: 'awaiting-source', date: clock.date };
   if (selected.some((snapshot) => new Date(snapshot.collectedAt) > clock.instant)) throw new Error('future snapshot');
-  if (selected.length !== expectedSourceIds.length || selected.some((snapshot) => snapshot.schemaVersion !== 2 || snapshot.window.to !== clock.date)) return { status: 'awaiting-source', date: clock.date };
+  if (selected.some((snapshot) => clock.instant - new Date(snapshot.collectedAt) > staleAfterHours * 3600000)) return { status: 'awaiting-source', date: clock.date };
   return { status: 'ready', date: clock.date, snapshots: selected.map(parsePrivateSnapshot) };
 }
 
@@ -45,7 +47,7 @@ export async function publishIfReady({ config, snapshots, expectedSourceIds, now
     try { receipt = JSON.parse(await readFile(receiptFile, 'utf8')); } catch (error) {
       if (error.code !== 'ENOENT') throw error;
     }
-    const decision = publicationDecision({ snapshots, expectedSourceIds, now, receipt });
+    const decision = publicationDecision({ snapshots, expectedSourceIds, now, receipt, staleAfterHours: config.staleAfterHours });
     if (decision.status !== 'ready') return decision;
     const result = await publish(decision.snapshots);
     await atomicWrite(receiptFile, publicationReceipt({ date: decision.date, result }), config.stateDir);

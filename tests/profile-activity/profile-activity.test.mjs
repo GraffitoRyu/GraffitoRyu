@@ -302,6 +302,89 @@ test('v3 renderer shows only anonymous fixed activity categories', () => {
   assert.equal(svg, renderActivitySvg(activity));
 });
 
+test('account usage accepts only the exact sanitized private contract and joins once after device merge', async () => {
+  const { parseAccountUsage, processActivitySurface } = await import('../../scripts/profile-activity/account-usage.mjs');
+  const sample = {
+    observedAt: '2026-09-13T09:00:00.000Z',
+    window: { durationMinutes: 300, usedPercent: 42.5, resetsAt: '2026-09-13T12:00:00.000Z' },
+    rateLimitStatus: 'ok',
+    creditAvailable: true,
+    creditUnlimited: false,
+    coverage: 'complete',
+  };
+  assert.deepEqual(parseAccountUsage(sample), sample);
+  const result = processActivitySurface([makeV3Snapshot(), makeV3Snapshot({ sourceId: SOURCE_B })], options, sample);
+  assert.deepEqual(result.accountUsage, sample);
+  assert.equal(result.activity.schemaVersion, 3);
+  assert.equal(Object.hasOwn(result.activity, 'accountUsage'), false);
+  assert.doesNotMatch(stableJson(result.activity), /usedPercent|reset|credit|account/);
+  assert.equal(processActivitySurface([makeV3Snapshot(), makeV3Snapshot({ sourceId: SOURCE_B })], options).accountUsage, null);
+});
+
+test('account usage rejects identifiers, billing metadata, raw responses, extras, and invalid values', async () => {
+  const { parseAccountUsage } = await import('../../scripts/profile-activity/account-usage.mjs');
+  const sample = {
+    observedAt: '2026-09-13T09:00:00.000Z',
+    window: { durationMinutes: 300, usedPercent: 42.5, resetsAt: null },
+    rateLimitStatus: 'limited', creditAvailable: false, creditUnlimited: false, coverage: 'partial',
+  };
+  for (const extra of ['accountId', 'balance', 'planId', 'resetCreditId', 'resetCreditTitle', 'resetCreditDescription', 'rawResponse']) {
+    assert.throws(() => parseAccountUsage({ ...sample, [extra]: 'PRIVATE-CANARY' }), /keys/);
+  }
+  assert.throws(() => parseAccountUsage({ ...sample, window: { ...sample.window, usedPercent: 101 } }), /usedPercent/);
+  assert.throws(() => parseAccountUsage({ ...sample, creditUnlimited: true }), /credit/);
+  assert.throws(() => parseAccountUsage({ ...sample, window: { ...sample.window, extra: true } }), /keys/);
+});
+
+test('v3 envelope uses a version-matched schema and retains no category identity', () => {
+  const snapshot = makeV3Snapshot({ calls: 1, pluginCalls: 1, skillUses: 1 });
+  const envelope = createEnvelope(snapshot);
+  assert.equal(envelope.schema, 'PROFILE_ACTIVITY_SNAPSHOT_V3');
+  assert.equal(parseEnvelope(envelope).snapshot.schemaVersion, 3);
+  assert.throws(() => parseEnvelope({ ...envelope, schema: 'PROFILE_ACTIVITY_SNAPSHOT_V2' }), /identity/);
+  assert.doesNotMatch(stableJson(envelope), /PRIVATE|pluginName|pluginId|skillName|modelName|arguments/);
+});
+
+test('v3 publication accepts matching current v2 or v3 pairs and waits on mixed or stale pairs', () => {
+  const now = '2026-09-13T05:00:00.000Z';
+  const v2 = [insightSnapshot({ collectedAt: '2026-09-13T04:00:00.000Z' }), insightSnapshot({ sourceId: SOURCE_B, collectedAt: '2026-09-13T04:00:00.000Z' })];
+  const v3 = [makeV3Snapshot({ collectedAt: '2026-09-13T04:00:00.000Z' }), makeV3Snapshot({ sourceId: SOURCE_B, collectedAt: '2026-09-13T04:00:00.000Z' })];
+  assert.equal(publicationDecision({ snapshots: v2, expectedSourceIds: [SOURCE_A, SOURCE_B], now, receipt: null }).status, 'ready');
+  assert.equal(publicationDecision({ snapshots: v3, expectedSourceIds: [SOURCE_A, SOURCE_B], now, receipt: null }).status, 'ready');
+  assert.equal(publicationDecision({ snapshots: [v2[0], v3[1]], expectedSourceIds: [SOURCE_A, SOURCE_B], now, receipt: null }).status, 'awaiting-source');
+  const stale = v3.map((snapshot) => ({ ...snapshot, collectedAt: '2026-09-10T04:00:00.000Z' }));
+  assert.equal(publicationDecision({ snapshots: stale, expectedSourceIds: [SOURCE_A, SOURCE_B], now, receipt: null }).status, 'awaiting-source');
+});
+
+test('v3 preservation refuses missing, conflicting, and malformed inputs before publication', async () => {
+  const root = await temp();
+  let publishes = 0;
+  const result = await publishIfReady({
+    config: { stateDir: root }, snapshots: [makeV3Snapshot({ collectedAt: '2026-09-13T04:00:00.000Z' })], expectedSourceIds: [SOURCE_A, SOURCE_B], now: '2026-09-13T05:00:00.000Z',
+    receiptFile: path.join(root, 'publication-receipt.json'), publish: async () => { publishes += 1; return { status: 'published', commit: 'a'.repeat(40) }; },
+  });
+  assert.equal(result.status, 'awaiting-source');
+  assert.equal(publishes, 0);
+  assert.throws(() => publicationDecision({
+    snapshots: [makeV3Snapshot(), makeV3Snapshot({ calls: 1, pluginCalls: 1 }), makeV3Snapshot({ sourceId: SOURCE_B })],
+    expectedSourceIds: [SOURCE_A, SOURCE_B], now: '2026-09-13T05:00:00.000Z', receipt: null,
+  }), /conflict/);
+  const malformed = makeV3Snapshot({ sourceId: SOURCE_B });
+  malformed.days[0].privateCanary = 'PRIVATE-CANARY';
+  assert.throws(() => publicationDecision({ snapshots: [makeV3Snapshot(), malformed], expectedSourceIds: [SOURCE_A, SOURCE_B], now: '2026-09-13T05:00:00.000Z', receipt: null }), /keys/);
+  await assert.rejects(readFile(path.join(root, 'publication-receipt.json'), 'utf8'));
+});
+
+test('v3 processing run reads stored snapshots without collecting a device', async () => {
+  const fixture = await installedPublisherFixture();
+  const local = makeV3Snapshot({ sourceId: SOURCE_B, revision: 5 });
+  await writeFile(path.join(fixture.stateDir, 'snapshot.json'), stableJson(local));
+  const result = JSON.parse((await run(process.execPath, [fixture.cli, 'run', '--config', fixture.config, '--as-of', '2026-09-13'])).stdout);
+  assert.equal(result.status, 'awaiting-source');
+  assert.equal((await readSnapshot(path.join(fixture.stateDir, 'snapshot.json'), fixture.stateDir)).revision, 5);
+  assert.deepEqual(await readdir(path.join(fixture.root, 'logs')), []);
+});
+
 test('T50 envelope digest is metadata and verifies canonical snapshot bytes', () => {
   const snapshot = insightSnapshot();
   const envelope = createEnvelope(snapshot);
