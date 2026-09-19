@@ -10,6 +10,7 @@ import { aggregateSnapshots } from '../../scripts/profile-activity/aggregate.mjs
 import { collectLogRoots, probeLogRoots } from '../../scripts/profile-activity/collect.mjs';
 import { parsePrivateSnapshot, parsePublicActivity, stableJson } from '../../scripts/profile-activity/contract.mjs';
 import { assertAllowedPaths, publishGenerated, verifyRuntimeManifest, withPublisherLock } from '../../scripts/profile-activity/publish.mjs';
+import { publicationDecision, publicationReceipt } from '../../scripts/profile-activity/publication-gate.mjs';
 import { acceptAcknowledgement, createEnvelope, nextDelivery, parseEnvelope, receiveEnvelope } from '../../scripts/profile-activity/relay.mjs';
 import { renderActivitySvg } from '../../scripts/profile-activity/render.mjs';
 import { chooseLatestSnapshots, readSnapshot, saveAndExportSnapshot } from '../../scripts/profile-activity/snapshot.mjs';
@@ -147,6 +148,23 @@ test('T53 sender restart preserves the pending envelope and a new date resets it
   const nextDate = nextDelivery({ snapshot: nextSnapshot, state: restored, date: '2026-09-20' });
   assert.equal(nextDate.envelope.revision, 8);
   assert.equal(nextDate.state.attempts, 1);
+});
+
+test('T54 publication gate waits before 08:00 and becomes ready at 08:00 KST', () => {
+  const snapshots = [
+    insightSnapshot({ collectedAt: '2026-09-12T22:00:00.000Z' }),
+    insightSnapshot({ sourceId: SOURCE_B, collectedAt: '2026-09-12T22:00:00.000Z' }),
+  ];
+  assert.equal(publicationDecision({ snapshots, expectedSourceIds: [SOURCE_A, SOURCE_B], now: '2026-09-12T22:59:59Z', receipt: null }).status, 'before-window');
+  assert.equal(publicationDecision({ snapshots, expectedSourceIds: [SOURCE_A, SOURCE_B], now: '2026-09-12T23:00:00Z', receipt: null }).status, 'ready');
+});
+
+test('T55 publication gate skips stale input and same-date repeats', () => {
+  const current = insightSnapshot({ collectedAt: '2026-09-13T04:00:00.000Z' });
+  const legacy = makeSnapshot({ sourceId: SOURCE_B, collectedAt: '2026-09-13T04:00:00.000Z' });
+  assert.equal(publicationDecision({ snapshots: [current, legacy], expectedSourceIds: [SOURCE_A, SOURCE_B], now: '2026-09-13T05:00:00Z', receipt: null }).status, 'awaiting-source');
+  const receipt = publicationReceipt({ date: '2026-09-13', result: { status: 'published', commit: 'a'.repeat(40) } });
+  assert.equal(publicationDecision({ snapshots: [current, insightSnapshot({ sourceId: SOURCE_B, collectedAt: '2026-09-13T04:00:00.000Z' })], expectedSourceIds: [SOURCE_A, SOURCE_B], now: '2026-09-13T05:00:00Z', receipt }).status, 'already-published');
 });
 
 test('T01 duplicate raw/archive copies do not increase counts', async () => {
