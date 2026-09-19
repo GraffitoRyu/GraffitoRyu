@@ -245,6 +245,63 @@ test('v3 collector counts a chat as new only when its first activity is inside t
   assert.equal(day.newChats, 1);
 });
 
+test('v3 aggregate sums anonymous counters, takes maxima, and weights percentages by raw denominators', () => {
+  const a = makeV3Snapshot({
+    sessions: 1, newChats: 1, calls: 4, pluginCalls: 1, browserCalls: 1, computerUseCalls: 1,
+    skillUses: 2, tokens: 10, maxSessionTokens: 9, longestSessionMinutes: 3,
+    fastTurns: 1, modeTurns: 2, reasoning: { none: 0, low: 1, medium: 0, high: 1, xhigh: 0, other: 0 },
+  });
+  const b = makeV3Snapshot({
+    sourceId: SOURCE_B, sessions: 2, newChats: 2, calls: 6, pluginCalls: 2, browserCalls: 1, computerUseCalls: 1,
+    skillUses: 3, tokens: 20, maxSessionTokens: 15, longestSessionMinutes: 7,
+    fastTurns: 9, modeTurns: 10, reasoning: { none: 0, low: 0, medium: 0, high: 8, xhigh: 0, other: 0 },
+  });
+  const result = aggregateSnapshots([a, b], options);
+  assert.equal(result.schemaVersion, 3);
+  assert.deepEqual(result.days[0], {
+    date: '2026-08-15', active: true, activeSessions: 3, newChats: 3, toolCalls: 10,
+    pluginCalls: 3, browserCalls: 2, computerUseCalls: 2, otherToolCalls: 3, skillUses: 5,
+    tokens: 30, maxSessionTokens: 15, longestSessionMinutes: 7, fastModePercent: 83.3,
+    reasoningPercent: { none: 0, low: 10, medium: 0, high: 90, xhigh: 0, other: 0 }, coverage: 'complete',
+  });
+  assert.deepEqual(result.summary, {
+    activeDays: 30, sessionDays: 90, newChats: 90, toolCalls: 300, pluginCalls: 90,
+    browserCalls: 60, computerUseCalls: 60, otherToolCalls: 90, skillUses: 150,
+    totalTokens: 900, maxSessionTokens: 15, longestSessionMinutes: 7,
+    currentStreakDays: 30, longestStreakDays: 30, fastModePercent: 83.3,
+    reasoningPercent: { none: 0, low: 10, medium: 0, high: 90, xhigh: 0, other: 0 },
+  });
+});
+
+test('v3 aggregate propagates unavailable optional metrics from either source', () => {
+  const a = makeV3Snapshot({ skillUses: 2, fastTurns: 1, modeTurns: 2, reasoning: { none: 0, low: 0, medium: 0, high: 1, xhigh: 0, other: 0 } });
+  const b = makeV3Snapshot({ sourceId: SOURCE_B });
+  const result = aggregateSnapshots([a, b], options);
+  assert.equal(result.summary.skillUses, null);
+  assert.equal(result.summary.fastModePercent, null);
+  assert.equal(result.summary.reasoningPercent, null);
+  assert.equal(result.days[0].skillUses, null);
+});
+
+test('v3 renderer shows only anonymous fixed activity categories', () => {
+  const activity = aggregateSnapshots([
+    makeV3Snapshot({ sessions: 1, newChats: 1, calls: 4, pluginCalls: 1, browserCalls: 1, computerUseCalls: 1, skillUses: 1, fastTurns: 1, modeTurns: 2, reasoning: { none: 0, low: 1, medium: 0, high: 1, xhigh: 0, other: 0 } }),
+    makeV3Snapshot({ sourceId: SOURCE_B, sessions: 1, newChats: 1, calls: 4, pluginCalls: 1, browserCalls: 1, computerUseCalls: 1, skillUses: 1, fastTurns: 1, modeTurns: 2, reasoning: { none: 0, low: 1, medium: 0, high: 1, xhigh: 0, other: 0 } }),
+  ], options);
+  const svg = renderActivitySvg(activity);
+  assert.match(svg, /New chats/);
+  assert.match(svg, /Plugin calls/);
+  assert.match(svg, /Browser\/web/);
+  assert.match(svg, /Computer use/);
+  assert.match(svg, /Other tools/);
+  assert.match(svg, /Skill uses/);
+  assert.match(svg, /Fast mode/);
+  assert.match(svg, /Reasoning/);
+  assert.match(svg, /none · low · medium · high · xhigh · other/);
+  assert.doesNotMatch(svg, /11111111|22222222|PRIVATE|device|source|<script|foreignObject|(?:href|src)=|on[a-z]+=/i);
+  assert.equal(svg, renderActivitySvg(activity));
+});
+
 test('T50 envelope digest is metadata and verifies canonical snapshot bytes', () => {
   const snapshot = insightSnapshot();
   const envelope = createEnvelope(snapshot);

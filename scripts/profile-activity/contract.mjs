@@ -8,6 +8,8 @@ const REASONING_KEYS = ['none', 'low', 'medium', 'high', 'xhigh', 'other'];
 const WINDOW_KEYS = ['from', 'to'];
 const SUMMARY_KEYS = ['activeDays', 'sessionDays', 'toolCalls'];
 const PROFILE_SUMMARY_KEYS = [...SUMMARY_KEYS, 'totalTokens', 'maxSessionTokens', 'longestSessionMinutes', 'currentStreakDays', 'longestStreakDays'];
+const SURFACE_PUBLIC_DAY_KEYS = [...PROFILE_DAY_KEYS, 'newChats', 'pluginCalls', 'browserCalls', 'computerUseCalls', 'otherToolCalls', 'skillUses', 'fastModePercent', 'reasoningPercent'];
+const SURFACE_SUMMARY_KEYS = [...PROFILE_SUMMARY_KEYS, 'newChats', 'pluginCalls', 'browserCalls', 'computerUseCalls', 'otherToolCalls', 'skillUses', 'fastModePercent', 'reasoningPercent'];
 const COVERAGE = new Set(['complete', 'partial', 'unknown']);
 
 function object(value, name) {
@@ -40,6 +42,18 @@ function nullableCount(value, name) {
   if (value === null) return null;
   if (!Number.isSafeInteger(value) || value < 0) throw new Error(`invalid ${name}`);
   return value;
+}
+
+function nullablePercentage(value, name) {
+  if (value === null) return null;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 100) throw new Error(`invalid ${name}`);
+  return value;
+}
+
+function reasoningPercent(value, name) {
+  if (value === null) return null;
+  exactKeys(value, REASONING_KEYS, name);
+  return Object.fromEntries(REASONING_KEYS.map((key) => [key, nullablePercentage(value[key], `${name}.${key}`)]));
 }
 
 function parseWindow(value) {
@@ -84,6 +98,22 @@ function parseDays(value, window, schemaVersion = 1) {
   });
 }
 
+function parseSurfacePublicDays(value, window) {
+  if (!Array.isArray(value) || value.length !== 30) throw new Error('incomplete days window');
+  return value.map((day, index) => {
+    exactKeys(day, SURFACE_PUBLIC_DAY_KEYS, 'day');
+    const date = parseDate(day.date);
+    if (date !== addDays(window.from, index)) throw new Error('days must be contiguous');
+    if (day.active !== null && typeof day.active !== 'boolean') throw new Error('invalid active');
+    if (!COVERAGE.has(day.coverage)) throw new Error('invalid coverage');
+    const counts = Object.fromEntries(['activeSessions', 'newChats', 'toolCalls', 'pluginCalls', 'browserCalls', 'computerUseCalls', 'otherToolCalls', 'skillUses', 'tokens', 'maxSessionTokens', 'longestSessionMinutes'].map((key) => [key, nullableCount(day[key], key)]));
+    const fastModePercent = nullablePercentage(day.fastModePercent, 'fastModePercent');
+    const parsedReasoning = reasoningPercent(day.reasoningPercent, 'reasoningPercent');
+    if (day.coverage === 'unknown' && [day.active, ...Object.values(counts), fastModePercent, parsedReasoning].some((item) => item !== null)) throw new Error('unknown day has values');
+    return { date, active: day.active, ...counts, fastModePercent, reasoningPercent: parsedReasoning, coverage: day.coverage };
+  });
+}
+
 export function parsePrivateSnapshot(value) {
   exactKeys(value, PRIVATE_KEYS, 'private snapshot');
   if (![1, 2, 3].includes(value.schemaVersion)) throw new Error('unsupported private schema');
@@ -99,9 +129,10 @@ export function parsePrivateSnapshot(value) {
 }
 
 export function parsePublicActivity(value) {
-  const profile = value?.schemaVersion === 2;
+  const profile = [2, 3].includes(value?.schemaVersion);
+  const surface = value?.schemaVersion === 3;
   exactKeys(value, profile ? PROFILE_PUBLIC_KEYS : PUBLIC_KEYS, 'public activity');
-  if (![1, 2].includes(value.schemaVersion) || value.metricScope !== 'observed-local-codex' || value.timezone !== 'Asia/Seoul') throw new Error('invalid public identity');
+  if (![1, 2, 3].includes(value.schemaVersion) || value.metricScope !== 'observed-local-codex' || value.timezone !== 'Asia/Seoul') throw new Error('invalid public identity');
   const window = parseWindow(value.window);
   if (addDays(window.from, 29) !== window.to) throw new Error('public window must contain 30 days');
   const asOfDate = parseDate(value.asOfDate, 'asOfDate');
@@ -109,7 +140,7 @@ export function parsePublicActivity(value) {
   const completeThroughDate = value.completeThroughDate === null ? null : parseDate(value.completeThroughDate, 'completeThroughDate');
   if (completeThroughDate && (completeThroughDate < window.from || completeThroughDate > window.to)) throw new Error('invalid completeThroughDate range');
   if (!new Set(['ready', 'partial', 'unavailable']).has(value.status)) throw new Error('invalid status');
-  exactKeys(value.summary, profile ? PROFILE_SUMMARY_KEYS : SUMMARY_KEYS, 'summary');
+  exactKeys(value.summary, surface ? SURFACE_SUMMARY_KEYS : profile ? PROFILE_SUMMARY_KEYS : SUMMARY_KEYS, 'summary');
   const summary = {
     activeDays: nullableCount(value.summary.activeDays, 'summary.activeDays'),
     sessionDays: nullableCount(value.summary.sessionDays, 'summary.sessionDays'),
@@ -119,7 +150,12 @@ export function parsePublicActivity(value) {
     if (!['sum', 'lower-bound'].includes(value.aggregation)) throw new Error('invalid aggregation');
     for (const key of PROFILE_SUMMARY_KEYS.slice(3)) summary[key] = nullableCount(value.summary[key], `summary.${key}`);
   }
-  return { schemaVersion: value.schemaVersion, metricScope: value.metricScope, timezone: value.timezone, window, asOfDate, completeThroughDate, status: value.status, ...(profile && { aggregation: value.aggregation }), summary, days: parseDays(value.days, window, value.schemaVersion) };
+  if (surface) {
+    for (const key of ['newChats', 'pluginCalls', 'browserCalls', 'computerUseCalls', 'otherToolCalls', 'skillUses']) summary[key] = nullableCount(value.summary[key], `summary.${key}`);
+    summary.fastModePercent = nullablePercentage(value.summary.fastModePercent, 'summary.fastModePercent');
+    summary.reasoningPercent = reasoningPercent(value.summary.reasoningPercent, 'summary.reasoningPercent');
+  }
+  return { schemaVersion: value.schemaVersion, metricScope: value.metricScope, timezone: value.timezone, window, asOfDate, completeThroughDate, status: value.status, ...(profile && { aggregation: value.aggregation }), summary, days: surface ? parseSurfacePublicDays(value.days, window) : parseDays(value.days, window, value.schemaVersion) };
 }
 
 export function isPublishableActivity(value) {
