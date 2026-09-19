@@ -17,6 +17,7 @@ export function aggregateSnapshots(inputs, options) {
   const from = addDays(asOfDate, -29);
   const versions = new Set(snapshots.map(({ schemaVersion }) => schemaVersion));
   const surface = snapshots.length === 2 && versions.size === 1 && versions.has(3);
+  if (surface && options.independentSources !== true) throw new Error('independent sources required for v3');
   const profile = surface || snapshots.length === 2 && versions.size === 1 && versions.has(2);
   const aggregation = options.independentSources === true ? 'sum' : 'lower-bound';
   const combine = (values) => aggregation === 'sum' ? values.reduce((sum, value) => sum + value, 0) : Math.max(...values);

@@ -82,7 +82,7 @@ function installedPaths(receiptFile) {
 
 function invoke(paths, command, input, pendingEnvelope) {
   try {
-    const stdout = execFileSync(paths.nodeBinary, [paths.cli, command, '--config', paths.config], {
+    const stdout = execFileSync(paths.nodeBinary, [paths.cli, command, '--config', paths.config, ...(command === 'run' && input !== undefined ? ['--account-usage-stdin'] : [])], {
       encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: MAX_BUFFER,
       ...(input === undefined ? {} : { input: JSON.stringify(input) }),
     });
@@ -117,8 +117,11 @@ export function createInstalledCliInvocation(options) {
 function main() {
   const [command, flag, receiptFile, ...extra] = process.argv.slice(2);
   if (!ENTRYPOINT_COMMANDS.has(command) || flag !== '--receipt' || !receiptFile || extra.length) throw new Error('usage');
-  const needsInput = ['acknowledge', 'receive', 'receive-run'].includes(command);
-  const input = needsInput ? JSON.parse(readFileSync(0, 'utf8')) : undefined;
+  const requiredInput = ['acknowledge', 'receive', 'receive-run'].includes(command);
+  const optionalInput = command === 'run';
+  const inputText = requiredInput || optionalInput ? readFileSync(0, 'utf8').trim() : '';
+  const input = inputText ? JSON.parse(inputText) : undefined;
+  if (requiredInput && input === undefined) throw new Error('input required');
   const pendingEnvelope = ['receive', 'receive-run'].includes(command) ? input : null;
   process.stdout.write(`${JSON.stringify(createInstalledCliInvocation({ receiptFile, command, input, pendingEnvelope }).run())}\n`);
 }

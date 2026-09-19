@@ -5,7 +5,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 let addDays;
-let aggregateSnapshots;
+let parseAccountUsage;
+let processActivitySurface;
 let atomicWrite;
 let collectLogRoots;
 let isPublishableActivity;
@@ -65,7 +66,7 @@ async function verifyBeforeImport(argv) {
 }
 
 async function loadRuntime() {
-  ({ aggregateSnapshots } = await import('./aggregate.mjs'));
+  ({ parseAccountUsage, processActivitySurface } = await import('./account-usage.mjs'));
   ({ collectLogRoots, probeLogRoots } = await import('./collect.mjs'));
   ({ readConfig } = await import('./config.mjs'));
   ({ addDays, isPublishableActivity, parseDate, stableJson } = await import('./contract.mjs'));
@@ -207,10 +208,18 @@ async function main() {
     process.stdout.write(stableJson(result));
     return;
   }
+  let accountUsage = null;
+  if (args.command === 'run' && process.argv.includes('--account-usage-stdin')) {
+    accountUsage = parseAccountUsage(await readPrivateInput());
+    if (accountUsage !== null) {
+      await atomicWrite(path.join(config.stateDir, 'account-usage.json'), accountUsage, config.stateDir);
+      stateChanged = true;
+    }
+  }
   const now = new Date().toISOString();
   const snapshots = await publisherSnapshots(config);
   if (args.dryRun) {
-    const activity = aggregateSnapshots(snapshots, { asOfDate, referenceTime: now, expectedSourceIds: config.expectedSources.map(({ sourceId }) => sourceId), independentSources: config.independentSources, staleAfterHours: config.staleAfterHours });
+    const { activity } = processActivitySurface(snapshots, { asOfDate, referenceTime: now, expectedSourceIds: config.expectedSources.map(({ sourceId }) => sourceId), independentSources: config.independentSources, staleAfterHours: config.staleAfterHours }, accountUsage);
     const generated = { 'metrics/codex-activity.json': stableJson(activity), 'assets/codex-activity.svg': renderActivitySvg(activity) };
     await publishGenerated(config, generated, { dryRun: true });
     stateChanged = 'unknown';
@@ -228,7 +237,7 @@ async function main() {
     now,
     receiptFile: path.join(config.stateDir, 'publication-receipt.json'),
     publish: async (readySnapshots) => {
-      const activity = aggregateSnapshots(readySnapshots, { asOfDate, referenceTime: now, expectedSourceIds: config.expectedSources.map(({ sourceId }) => sourceId), independentSources: config.independentSources, staleAfterHours: config.staleAfterHours });
+      const { activity } = processActivitySurface(readySnapshots, { asOfDate, referenceTime: now, expectedSourceIds: config.expectedSources.map(({ sourceId }) => sourceId), independentSources: config.independentSources, staleAfterHours: config.staleAfterHours }, accountUsage);
       if (!isPublishableActivity(activity)) throw new Error('aggregate unavailable');
       return publishGeneratedUnlocked(config, { 'metrics/codex-activity.json': stableJson(activity), 'assets/codex-activity.svg': renderActivitySvg(activity) });
     },

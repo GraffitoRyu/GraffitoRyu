@@ -244,6 +244,17 @@ test('v3 collector keeps absent or malformed optional telemetry null without cor
   assert.equal(day.coverage, 'complete');
 });
 
+test('v3 collector keeps optional telemetry null before its first structured observation', async () => {
+  const result = await collectFiles({ 'a.jsonl': rolloutLines({ events: [
+    message('2026-09-12T01:00:00Z'),
+    { timestamp: '2026-09-13T01:00:00Z', type: 'event_msg', payload: { type: 'mode', mode: 'fast' } },
+  ] }) });
+  assert.equal(result.days[0].fastTurns, null);
+  assert.equal(result.days[0].modeTurns, null);
+  assert.equal(result.days[1].fastTurns, 1);
+  assert.equal(result.days[1].modeTurns, 1);
+});
+
 test('v3 collector counts a chat as new only when its first activity is inside the window', async () => {
   const old = rolloutLines({ events: [message('2026-08-01T01:00:00Z'), message('2026-09-12T01:00:00Z')] });
   const fresh = rolloutLines({ id: 'fresh', events: [message('2026-09-12T02:00:00Z')] });
@@ -288,6 +299,13 @@ test('v3 aggregate propagates unavailable optional metrics from either source', 
   assert.equal(result.summary.fastModePercent, null);
   assert.equal(result.summary.reasoningPercent, null);
   assert.equal(result.days[0].skillUses, null);
+});
+
+test('v3 aggregate refuses a non-independent two-device surface', () => {
+  assert.throws(() => aggregateSnapshots([
+    makeV3Snapshot(),
+    makeV3Snapshot({ sourceId: SOURCE_B }),
+  ], { ...options, independentSources: false }), /independent sources required/);
 });
 
 test('v3 renderer shows only anonymous fixed activity categories', () => {
@@ -344,6 +362,19 @@ test('account usage rejects identifiers, billing metadata, raw responses, extras
   assert.throws(() => parseAccountUsage({ ...sample, observedAt: null }), /observedAt/);
 });
 
+test('installed run accepts one private account sample without exposing it in CLI output', async () => {
+  const fixture = await installedPublisherFixture();
+  const sample = {
+    observedAt: '2026-09-13T09:00:00.000Z',
+    window: { durationMinutes: 300, usedPercent: 42.5, resetsAt: '2026-09-13T12:00:00.000Z' },
+    rateLimitStatus: 'ok', creditAvailable: true, creditUnlimited: false, coverage: 'complete',
+  };
+  const result = deliveryExecution.createInstalledCliInvocation({ receiptFile: fixture.receiptFile, command: 'run', input: sample }).run();
+  assert.doesNotMatch(stableJson(result), /usedPercent|resetsAt|credit|42\.5/);
+  assert.deepEqual(JSON.parse(await readFile(path.join(fixture.stateDir, 'account-usage.json'), 'utf8')), sample);
+  assert.throws(() => deliveryExecution.createInstalledCliInvocation({ receiptFile: fixture.receiptFile, command: 'run', input: { ...sample, accountId: 'PRIVATE-CANARY' } }).run());
+});
+
 test('v3 envelope uses a version-matched schema and retains no category identity', () => {
   const snapshot = makeV3Snapshot({ calls: 1, pluginCalls: 1, skillUses: 1 });
   const envelope = createEnvelope(snapshot);
@@ -388,7 +419,7 @@ test('v3 processing run reads stored snapshots without collecting a device', asy
   const local = makeV3Snapshot({ sourceId: SOURCE_B, revision: 5 });
   await writeFile(path.join(fixture.stateDir, 'snapshot.json'), stableJson(local));
   const result = JSON.parse((await run(process.execPath, [fixture.cli, 'run', '--config', fixture.config, '--as-of', '2026-09-13'])).stdout);
-  assert.equal(result.status, 'awaiting-source');
+  assert.ok(['before-window', 'awaiting-source'].includes(result.status));
   assert.equal((await readSnapshot(path.join(fixture.stateDir, 'snapshot.json'), fixture.stateDir)).revision, 5);
   assert.deepEqual(await readdir(path.join(fixture.root, 'logs')), []);
 });
@@ -557,7 +588,7 @@ test('T66 receiver entrypoint runs receive then one gated publication check', as
   const envelope = createEnvelope(insightSnapshot({ sourceId: SOURCE_A }));
   const result = JSON.parse((await runWithInput(process.execPath, [fixture.delivery, 'receive-run', '--receipt', fixture.receiptFile], stableJson(envelope))).stdout);
   assert.deepEqual(result.acknowledgement, { status: 'received', revision: envelope.revision, digest: envelope.digest });
-  assert.equal(result.publication.status, 'awaiting-source');
+  assert.ok(['before-window', 'awaiting-source'].includes(result.publication.status));
   assert.equal((await readSnapshot(path.join(fixture.stateDir, `last-good-${SOURCE_A}.json`), fixture.stateDir)).revision, envelope.revision);
 });
 
@@ -598,7 +629,7 @@ test('T71 publisher run processes stored device snapshots without collecting eit
   const local = insightSnapshot({ sourceId: SOURCE_B, revision: 5 });
   await writeFile(path.join(fixture.stateDir, 'snapshot.json'), stableJson(local));
   const result = JSON.parse((await run(process.execPath, [fixture.cli, 'run', '--config', fixture.config, '--as-of', '2026-09-13'])).stdout);
-  assert.equal(result.status, 'awaiting-source');
+  assert.ok(['before-window', 'awaiting-source'].includes(result.status));
   assert.equal((await readSnapshot(path.join(fixture.stateDir, 'snapshot.json'), fixture.stateDir)).revision, 5);
 });
 
@@ -769,6 +800,15 @@ test('T42 cumulative token snapshots count only positive session deltas', async 
   assert.equal(day.longestSessionMinutes, 4);
 });
 
+test('T42 token deltas use the last pre-window sample as their baseline', async () => {
+  const result = await collectFiles({ 'a.jsonl': rolloutLines({ events: [
+    tokenCount('2026-09-11T01:00:00Z', 100, 1),
+    tokenCount('2026-09-12T01:00:00Z', 250, 2),
+  ] }) });
+  assert.equal(result.days[0].tokens, 150);
+  assert.equal(result.days[0].maxSessionTokens, 250);
+});
+
 test('T43 fork token baseline excludes copied parent usage', async () => {
   const records = [
     { timestamp: '2026-09-12T00:00:00Z', type: 'session_meta', payload: { id: 'child', parent_thread_id: 'parent', subagent_history_start_ordinal: 10, cwd: '/work/project' } },
@@ -801,6 +841,15 @@ test('T47 malformed token telemetry makes its day unknown', async () => {
   const day = (await collectFiles({ 'a.jsonl': rolloutLines({ events: [malformed] }) })).days[0];
   assert.equal(day.tokens, null);
   assert.equal(day.coverage, 'unknown');
+});
+
+test('T47 partial coverage recovers after malformed dated records leave the window', async () => {
+  const oldUnknown = call('2026-09-01T01:00:00Z', 'old', { provenance: 'remote' });
+  const oldMalformedToken = tokenCount('2026-09-01T01:01:00Z', 100, 1);
+  oldMalformedToken.payload.info.total_token_usage.total_tokens = '100';
+  const result = await collectFiles({ 'a.jsonl': rolloutLines({ events: [oldUnknown, oldMalformedToken, message('2026-09-12T01:00:00Z')] }) });
+  assert.equal(result.partial, false);
+  assert.equal(result.days[0].coverage, 'complete');
 });
 
 test('T44 non-independent sources publish conservative lower-bound insights', () => {

@@ -6,7 +6,7 @@ The collector converts explicitly allowed local Codex JSONL records into private
 
 `activeSessions` is a daily logical-session count, so its period total is labelled **Session-days**, not unique sessions. `newChats` counts a logical session once on its first active date in the window. Tool identities become only total, plugin, browser/web, computer-use, and other counters. Explicit structured skill, mode, and reasoning events become fixed counts; absent telemetry remains `null` and is never inferred from text, paths, or commands. Token counts are positive deltas of locally observed cumulative session telemetry. Fast and reasoning percentages use merged numerators and denominators, never an average of device percentages.
 
-Account-wide native usage is a separate private sample. Its exact contract retains only observation time, window duration, used percentage, reset time, rate-limit state, credit availability/unlimited flags, and coverage. It is joined once after device aggregation and is not added per device or exposed in the public activity JSON or SVG. Dates before the first sample remain unavailable.
+Account-wide native usage is a separate private sample. Its exact contract retains only observation time, window duration, used percentage, reset time, rate-limit state, credit availability/unlimited flags, and coverage. The installed entrypoint passes it to `run` through non-TTY input; the runtime validates and stores it only in private state, then joins it once after device aggregation. It is not added per device or exposed in the public activity JSON or SVG. Dates before the first sample remain unavailable.
 
 ## Development checks
 
