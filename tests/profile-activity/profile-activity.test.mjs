@@ -525,6 +525,15 @@ test('v3 renderer draws a bounded 30-day token histogram with readable axes', ()
   assert.match(svg, /class="panel"[^>]+fill="#f6f8fa" fill-opacity="\.02" stroke="#d0d7de"/);
 });
 
+test('README SVG surfaces share light and dark theme opacity', async () => {
+  const workflow = await readFile(new URL('../../assets/ai-assisted-development.svg', import.meta.url), 'utf8');
+  const activity = await readFile(new URL('../../assets/codex-activity.svg', import.meta.url), 'utf8');
+  for (const svg of [workflow, activity]) {
+    assert.match(svg, /fill-opacity:\.02/);
+    assert.match(svg, /@media\(prefers-color-scheme:dark\).*fill-opacity:\.36/);
+  }
+});
+
 test('v3 renderer distinguishes unknown, zero, partial, and ready token bars', () => {
   const observed = makeV3Input({ sessions: 1, calls: 1, tokens: 10 });
   const unavailable = makeV3Input({ sourceId: SOURCE_B });
