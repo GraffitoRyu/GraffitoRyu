@@ -304,14 +304,65 @@ test('v3 aggregate sums anonymous counters, takes maxima, and weights percentage
   });
 });
 
-test('v3 aggregate propagates unavailable optional metrics from either source', () => {
+test('v3 aggregate retains optional counts but not percentages from partial inputs', () => {
   const a = makeV3Input({ skillUses: 2, fastTurns: 1, modeTurns: 2, reasoning: { none: 0, low: 0, medium: 0, high: 1, xhigh: 0, other: 0 } });
   const b = makeV3Input({ sourceId: SOURCE_B });
   const result = aggregateSnapshots([a, b], options);
-  assert.equal(result.summary.skillUses, null);
+  assert.equal(result.summary.skillUses, 60);
   assert.equal(result.summary.fastModePercent, null);
   assert.equal(result.summary.reasoningPercent, null);
-  assert.equal(result.days[0].skillUses, null);
+  assert.equal(result.days[0].skillUses, 2);
+  assert.equal(result.status, 'partial');
+});
+
+test('v3 aggregate retains verified observations when the peer day is unknown', () => {
+  const observed = makeV3Input({
+    sessions: 1, newChats: 1, calls: 4, pluginCalls: 1, browserCalls: 1, computerUseCalls: 1,
+    skillUses: 2, tokens: 10, maxSessionTokens: 9, longestSessionMinutes: 3,
+    fastTurns: 1, modeTurns: 2, reasoning: { none: 0, low: 1, medium: 0, high: 1, xhigh: 0, other: 0 },
+  });
+  const unavailable = makeV3Input({ sourceId: SOURCE_B });
+  unavailable.snapshot.days = unavailable.snapshot.days.map((day) => Object.fromEntries(
+    Object.keys(day).map((key) => [key, key === 'date' ? day.date : key === 'coverage' ? 'unknown' : null]),
+  ));
+
+  const result = aggregateSnapshots([observed, unavailable], options);
+
+  assert.equal(result.status, 'partial');
+  assert.deepEqual(result.days[0], {
+    date: '2026-08-15', active: true, activeSessions: 1, newChats: 1, toolCalls: 4,
+    pluginCalls: 1, browserCalls: 1, computerUseCalls: 1, otherToolCalls: 1, skillUses: 2,
+    tokens: 10, maxSessionTokens: 9, longestSessionMinutes: 3, fastModePercent: null,
+    reasoningPercent: null, coverage: 'partial',
+  });
+  assert.deepEqual(result.summary, {
+    activeDays: 30, sessionDays: 30, newChats: 30, toolCalls: 120, pluginCalls: 30,
+    browserCalls: 30, computerUseCalls: 30, otherToolCalls: 30, skillUses: 60,
+    totalTokens: 300, maxSessionTokens: 9, longestSessionMinutes: 3,
+    currentStreakDays: 30, longestStreakDays: 30, fastModePercent: null,
+    reasoningPercent: null,
+  });
+});
+
+test('v3 partial aggregation preserves observed zero per metric', () => {
+  const observed = makeV3Input();
+  observed.snapshot.days = observed.snapshot.days.map((day) => ({
+    ...day,
+    tokens: null,
+    maxSessionTokens: null,
+    longestSessionMinutes: null,
+  }));
+  const unavailable = makeV3Input({ sourceId: SOURCE_B });
+  unavailable.snapshot.days = unavailable.snapshot.days.map((day) => Object.fromEntries(
+    Object.keys(day).map((key) => [key, key === 'date' ? day.date : key === 'coverage' ? 'unknown' : null]),
+  ));
+
+  const result = aggregateSnapshots([observed, unavailable], options);
+
+  assert.equal(result.days[0].toolCalls, 0);
+  assert.equal(result.summary.toolCalls, 0);
+  assert.equal(result.days[0].tokens, null);
+  assert.equal(result.summary.totalTokens, null);
 });
 
 test('v3 aggregate refuses a non-independent two-device surface', () => {
@@ -338,6 +389,26 @@ test('v3 renderer shows only anonymous fixed activity categories', () => {
   assert.match(svg, /none · low · medium · high · xhigh · other/);
   assert.doesNotMatch(svg, /11111111|22222222|PRIVATE|device|source|<script|foreignObject|(?:href|src)=|on[a-z]+=/i);
   assert.equal(svg, renderActivitySvg(activity));
+});
+
+test('v3 renderer labels verified partial observations as lower bounds', () => {
+  const observed = makeV3Input({ sessions: 1, newChats: 1, calls: 4, tokens: 10, maxSessionTokens: 9, longestSessionMinutes: 3 });
+  const unavailable = makeV3Input({ sourceId: SOURCE_B });
+  unavailable.snapshot.days = unavailable.snapshot.days.map((day) => Object.fromEntries(
+    Object.keys(day).map((key) => [key, key === 'date' ? day.date : key === 'coverage' ? 'unknown' : null]),
+  ));
+  const svg = renderActivitySvg(aggregateSnapshots([observed, unavailable], options));
+
+  assert.match(svg, />≥300</);
+  assert.match(svg, />≥120</);
+  assert.match(svg, /≥10 tokens \(partial\)/);
+  assert.match(svg, /Unavailable/);
+
+  const complete = renderActivitySvg(aggregateSnapshots([
+    makeV3Input({ sessions: 1, calls: 1, tokens: 1, skillUses: 0 }),
+    makeV3Input({ sourceId: SOURCE_B, sessions: 1, calls: 1, tokens: 1, skillUses: 0 }),
+  ], options));
+  assert.doesNotMatch(complete, /≥/);
 });
 
 test('account usage accepts only the exact sanitized private contract and joins once after device merge', async () => {

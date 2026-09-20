@@ -31,21 +31,30 @@ export function aggregateSnapshots(inputs, options) {
     const allInactive = sourceDays.every((day) => day?.active === false);
     const active = anyActive ? true : allInactive ? false : null;
     const values = (key) => sourceDays.map((day) => day[key]);
+    const observedValues = (key) => values(key).filter((value) => value !== null);
     const known = (key) => allKnown && sourceDays.every((day) => day[key] !== null);
     const legacyKeys = profile ? ['activeSessions', 'toolCalls', 'tokens', 'maxSessionTokens', 'longestSessionMinutes'] : ['activeSessions', 'toolCalls'];
     const legacyKnown = allKnown && (profile || options.independentSources === true) && sourceDays.every((day) => legacyKeys.every((key) => day[key] !== null));
+    const observed = (key) => {
+      const available = observedValues(key);
+      return available.length === 0 ? null : combine(available);
+    };
+    const observedMaximum = (key) => {
+      const available = observedValues(key);
+      return available.length === 0 ? null : Math.max(...available);
+    };
     const complete = sourceDays.every((day) => day?.coverage === 'complete') && (options.independentSources === true || !profile);
     const coverage = complete ? 'complete' : sourceDays.some((day) => day && day.coverage !== 'unknown') ? 'partial' : 'unknown';
     const base = {
       date,
       active,
-      activeSessions: legacyKnown ? combine(values('activeSessions')) : null,
-      toolCalls: legacyKnown ? combine(values('toolCalls')) : null,
+      activeSessions: surface ? observed('activeSessions') : legacyKnown ? combine(values('activeSessions')) : null,
+      toolCalls: surface ? observed('toolCalls') : legacyKnown ? combine(values('toolCalls')) : null,
     };
     if (profile) Object.assign(base, {
-      tokens: legacyKnown ? combine(values('tokens')) : null,
-      maxSessionTokens: legacyKnown ? Math.max(...values('maxSessionTokens')) : null,
-      longestSessionMinutes: legacyKnown ? Math.max(...values('longestSessionMinutes')) : null,
+      tokens: surface ? observed('tokens') : legacyKnown ? combine(values('tokens')) : null,
+      maxSessionTokens: surface ? observedMaximum('maxSessionTokens') : legacyKnown ? Math.max(...values('maxSessionTokens')) : null,
+      longestSessionMinutes: surface ? observedMaximum('longestSessionMinutes') : legacyKnown ? Math.max(...values('longestSessionMinutes')) : null,
     });
     if (surface) {
       const reasoningKnown = known('reasoningTurns') && sourceDays.every((day) => day.reasoning !== null);
@@ -55,12 +64,12 @@ export function aggregateSnapshots(inputs, options) {
         : null;
       const modeKnown = known('fastTurns') && known('modeTurns');
       Object.assign(base, {
-        newChats: known('newChats') ? combine(values('newChats')) : null,
-        pluginCalls: known('pluginCalls') ? combine(values('pluginCalls')) : null,
-        browserCalls: known('browserCalls') ? combine(values('browserCalls')) : null,
-        computerUseCalls: known('computerUseCalls') ? combine(values('computerUseCalls')) : null,
-        otherToolCalls: known('otherToolCalls') ? combine(values('otherToolCalls')) : null,
-        skillUses: known('skillUses') ? combine(values('skillUses')) : null,
+        newChats: observed('newChats'),
+        pluginCalls: observed('pluginCalls'),
+        browserCalls: observed('browserCalls'),
+        computerUseCalls: observed('computerUseCalls'),
+        otherToolCalls: observed('otherToolCalls'),
+        skillUses: observed('skillUses'),
         fastModePercent: modeKnown ? percentage(combine(values('fastTurns')), combine(values('modeTurns'))) : null,
         reasoningPercent,
       });
@@ -76,15 +85,16 @@ export function aggregateSnapshots(inputs, options) {
   const every = (key) => days.every((day) => day[key] !== null);
   const lowerBound = profile && aggregation === 'lower-bound';
   const knownValues = (key) => days.map((day) => day[key]).filter((value) => value !== null);
-  const total = (key) => every(key) || lowerBound && knownValues(key).length ? knownValues(key).reduce((sum, value) => sum + value, 0) : null;
-  const maximum = (key) => every(key) || lowerBound && knownValues(key).length ? Math.max(...knownValues(key)) : null;
+  const partialTotals = surface || lowerBound;
+  const total = (key) => every(key) || partialTotals && knownValues(key).length ? knownValues(key).reduce((sum, value) => sum + value, 0) : null;
+  const maximum = (key) => every(key) || partialTotals && knownValues(key).length ? Math.max(...knownValues(key)) : null;
   const summary = {
-    activeDays: every('active') || lowerBound && knownValues('active').length ? days.filter((day) => day.active).length : null,
+    activeDays: every('active') || partialTotals && knownValues('active').length ? days.filter((day) => day.active).length : null,
     sessionDays: total('activeSessions'),
     toolCalls: total('toolCalls'),
   };
   if (profile) {
-    const activeKnown = every('active') || lowerBound && knownValues('active').length;
+    const activeKnown = every('active') || partialTotals && knownValues('active').length;
     let currentStreakDays = activeKnown ? 0 : null;
     let longestStreakDays = activeKnown ? 0 : null;
     let run = 0;
@@ -103,6 +113,7 @@ export function aggregateSnapshots(inputs, options) {
       longestStreakDays,
     });
   }
+  const surfaceSourceDays = surface ? snapshots.flatMap((snapshot) => snapshot.days.filter((day) => day.date >= from && day.date <= asOfDate)) : [];
   if (surface) {
     Object.assign(summary, {
       newChats: total('newChats'),
@@ -112,18 +123,19 @@ export function aggregateSnapshots(inputs, options) {
       otherToolCalls: total('otherToolCalls'),
       skillUses: total('skillUses'),
     });
-    const sourceDays = snapshots.flatMap((snapshot) => snapshot.days.filter((day) => day.date >= from && day.date <= asOfDate));
-    const modeKnown = sourceDays.length === 60 && sourceDays.every((day) => day.fastTurns !== null && day.modeTurns !== null);
-    summary.fastModePercent = modeKnown ? percentage(sourceDays.reduce((sum, day) => sum + day.fastTurns, 0), sourceDays.reduce((sum, day) => sum + day.modeTurns, 0)) : null;
-    const reasoningKnown = sourceDays.length === 60 && sourceDays.every((day) => day.reasoning !== null && day.reasoningTurns !== null);
-    const reasoningTurns = reasoningKnown ? sourceDays.reduce((sum, day) => sum + day.reasoningTurns, 0) : 0;
+    const modeKnown = surfaceSourceDays.length === 60 && surfaceSourceDays.every((day) => day.fastTurns !== null && day.modeTurns !== null);
+    summary.fastModePercent = modeKnown ? percentage(surfaceSourceDays.reduce((sum, day) => sum + day.fastTurns, 0), surfaceSourceDays.reduce((sum, day) => sum + day.modeTurns, 0)) : null;
+    const reasoningKnown = surfaceSourceDays.length === 60 && surfaceSourceDays.every((day) => day.reasoning !== null && day.reasoningTurns !== null);
+    const reasoningTurns = reasoningKnown ? surfaceSourceDays.reduce((sum, day) => sum + day.reasoningTurns, 0) : 0;
     summary.reasoningPercent = reasoningKnown && reasoningTurns
-      ? Object.fromEntries(REASONING_KEYS.map((key) => [key, percentage(sourceDays.reduce((sum, day) => sum + day.reasoning[key], 0), reasoningTurns)]))
+      ? Object.fromEntries(REASONING_KEYS.map((key) => [key, percentage(surfaceSourceDays.reduce((sum, day) => sum + day.reasoning[key], 0), reasoningTurns)]))
       : null;
   }
   const unavailable = snapshots.length !== 2 || days.every((day) => day.active === null);
   const requiredSummary = surface ? ['activeDays', 'sessionDays', 'toolCalls', 'newChats', 'pluginCalls', 'browserCalls', 'computerUseCalls', 'otherToolCalls', 'totalTokens', 'maxSessionTokens', 'longestSessionMinutes', 'currentStreakDays', 'longestStreakDays'] : Object.keys(summary);
-  const ready = !unavailable && fresh && days.every((day) => day.coverage === 'complete') && requiredSummary.every((key) => summary[key] !== null);
+  const requiredSurfaceKeys = ['active', 'activeSessions', 'newChats', 'toolCalls', 'pluginCalls', 'browserCalls', 'computerUseCalls', 'otherToolCalls', 'skillUses', 'tokens', 'maxSessionTokens', 'longestSessionMinutes'];
+  const surfaceReady = !surface || surfaceSourceDays.length === 60 && surfaceSourceDays.every((day) => requiredSurfaceKeys.every((key) => day[key] !== null));
+  const ready = !unavailable && fresh && surfaceReady && days.every((day) => day.coverage === 'complete') && requiredSummary.every((key) => summary[key] !== null);
   return parsePublicActivity({
     schemaVersion: surface ? 3 : profile ? 2 : 1,
     metricScope: 'observed-local-codex',

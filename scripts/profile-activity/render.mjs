@@ -23,16 +23,19 @@ function percent(value) {
 }
 
 function renderSurface(activity) {
+  const partial = activity.status === 'partial';
+  const bounded = (value, formatter = number) => `${partial && value !== null ? '≥' : ''}${formatter(value)}`;
   const maximum = Math.max(1, ...activity.days.map((day) => day.tokens ?? 0));
   const cells = activity.days.map((day, index) => {
     const x = 32 + index * 28;
     if (day.tokens === null) return `<rect x="${x}" y="177" width="20" height="20" rx="4" fill="url(#unknown)"/><title>${escapeXml(day.date)}: unavailable</title>`;
     const opacity = day.tokens === 0 ? 0.12 : 0.28 + day.tokens / maximum * 0.72;
-    return `<rect x="${x}" y="177" width="20" height="20" rx="4" fill="#2f81f7" opacity="${opacity.toFixed(2)}"/><title>${escapeXml(day.date)}: ${compactNumber(day.tokens)} tokens</title>`;
+    const lowerBound = day.coverage !== 'complete';
+    return `<rect x="${x}" y="177" width="20" height="20" rx="4" fill="#2f81f7" opacity="${opacity.toFixed(2)}"/><title>${escapeXml(day.date)}: ${lowerBound ? '≥' : ''}${compactNumber(day.tokens)} tokens${lowerBound ? ' (partial)' : ''}</title>`;
   }).join('');
   const reasoning = activity.summary.reasoningPercent;
   const reasoningValues = reasoning === null ? 'Unavailable' : ['none', 'low', 'medium', 'high', 'xhigh', 'other'].map((key) => `${percent(reasoning[key])}`).join(' · ');
-  const status = activity.status === 'ready' ? 'Complete selected-log coverage' : activity.status === 'partial' ? 'Partial or delayed coverage' : 'Coverage unavailable';
+  const status = activity.status === 'ready' ? 'Complete selected-log coverage' : partial ? 'Observed lower bounds · partial coverage' : 'Coverage unavailable';
   return `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="520" viewBox="0 0 900 520" role="img" aria-labelledby="title description">
 <title id="title">Codex activity silhouette</title>
 <desc id="description">Anonymous Codex activity over the last 30 days. ${escapeXml(status)}.</desc>
@@ -40,23 +43,23 @@ function renderSurface(activity) {
 <rect class="panel" x=".5" y=".5" width="899" height="519" rx="12" fill="#fff" stroke="#d0d7de"/>
 <text x="32" y="35" font-size="19" font-weight="600">Codex activity silhouette</text>
 <text x="32" y="57" font-size="12" opacity=".72">Anonymous activity · last 30 days</text>
-<text x="32" y="93" font-size="12" opacity=".72">30d tokens</text><text x="32" y="122" font-size="23" font-weight="600">${compactNumber(activity.summary.totalTokens)}</text>
-<text x="206" y="93" font-size="12" opacity=".72">Max session</text><text x="206" y="122" font-size="23" font-weight="600">${compactNumber(activity.summary.maxSessionTokens)}</text>
-<text x="380" y="93" font-size="12" opacity=".72">Longest chat</text><text x="380" y="122" font-size="23" font-weight="600">${duration(activity.summary.longestSessionMinutes)}</text>
-<text x="554" y="93" font-size="12" opacity=".72">Current streak</text><text x="554" y="122" font-size="23" font-weight="600">${number(activity.summary.currentStreakDays)}${activity.summary.currentStreakDays === null ? '' : 'd'}</text>
-<text x="728" y="93" font-size="12" opacity=".72">Longest streak</text><text x="728" y="122" font-size="23" font-weight="600">${number(activity.summary.longestStreakDays)}${activity.summary.longestStreakDays === null ? '' : 'd'}</text>
+<text x="32" y="93" font-size="12" opacity=".72">30d tokens</text><text x="32" y="122" font-size="23" font-weight="600">${bounded(activity.summary.totalTokens, compactNumber)}</text>
+<text x="206" y="93" font-size="12" opacity=".72">Max session</text><text x="206" y="122" font-size="23" font-weight="600">${bounded(activity.summary.maxSessionTokens, compactNumber)}</text>
+<text x="380" y="93" font-size="12" opacity=".72">Longest chat</text><text x="380" y="122" font-size="23" font-weight="600">${bounded(activity.summary.longestSessionMinutes, duration)}</text>
+<text x="554" y="93" font-size="12" opacity=".72">Current streak</text><text x="554" y="122" font-size="23" font-weight="600">${bounded(activity.summary.currentStreakDays)}${activity.summary.currentStreakDays === null ? '' : 'd'}</text>
+<text x="728" y="93" font-size="12" opacity=".72">Longest streak</text><text x="728" y="122" font-size="23" font-weight="600">${bounded(activity.summary.longestStreakDays)}${activity.summary.longestStreakDays === null ? '' : 'd'}</text>
 <text x="32" y="160" font-size="14" font-weight="600">Token activity</text>
 ${cells}
 <text x="32" y="240" font-size="14" font-weight="600">Anonymous counters</text>
-<text x="32" y="270" font-size="12" opacity=".72">Active days</text><text x="32" y="296" font-size="20" font-weight="600">${number(activity.summary.activeDays)}</text>
-<text x="176" y="270" font-size="12" opacity=".72">Session-days</text><text x="176" y="296" font-size="20" font-weight="600">${number(activity.summary.sessionDays)}</text>
-<text x="320" y="270" font-size="12" opacity=".72">New chats</text><text x="320" y="296" font-size="20" font-weight="600">${number(activity.summary.newChats)}</text>
-<text x="464" y="270" font-size="12" opacity=".72">Tool calls</text><text x="464" y="296" font-size="20" font-weight="600">${number(activity.summary.toolCalls)}</text>
-<text x="608" y="270" font-size="12" opacity=".72">Plugin calls</text><text x="608" y="296" font-size="20" font-weight="600">${number(activity.summary.pluginCalls)}</text>
-<text x="752" y="270" font-size="12" opacity=".72">Skill uses</text><text x="752" y="296" font-size="20" font-weight="600">${number(activity.summary.skillUses)}</text>
-<text x="32" y="334" font-size="12" opacity=".72">Browser/web</text><text x="32" y="360" font-size="20" font-weight="600">${number(activity.summary.browserCalls)}</text>
-<text x="248" y="334" font-size="12" opacity=".72">Computer use</text><text x="248" y="360" font-size="20" font-weight="600">${number(activity.summary.computerUseCalls)}</text>
-<text x="464" y="334" font-size="12" opacity=".72">Other tools</text><text x="464" y="360" font-size="20" font-weight="600">${number(activity.summary.otherToolCalls)}</text>
+<text x="32" y="270" font-size="12" opacity=".72">Active days</text><text x="32" y="296" font-size="20" font-weight="600">${bounded(activity.summary.activeDays)}</text>
+<text x="176" y="270" font-size="12" opacity=".72">Session-days</text><text x="176" y="296" font-size="20" font-weight="600">${bounded(activity.summary.sessionDays)}</text>
+<text x="320" y="270" font-size="12" opacity=".72">New chats</text><text x="320" y="296" font-size="20" font-weight="600">${bounded(activity.summary.newChats)}</text>
+<text x="464" y="270" font-size="12" opacity=".72">Tool calls</text><text x="464" y="296" font-size="20" font-weight="600">${bounded(activity.summary.toolCalls)}</text>
+<text x="608" y="270" font-size="12" opacity=".72">Plugin calls</text><text x="608" y="296" font-size="20" font-weight="600">${bounded(activity.summary.pluginCalls)}</text>
+<text x="752" y="270" font-size="12" opacity=".72">Skill uses</text><text x="752" y="296" font-size="20" font-weight="600">${bounded(activity.summary.skillUses)}</text>
+<text x="32" y="334" font-size="12" opacity=".72">Browser/web</text><text x="32" y="360" font-size="20" font-weight="600">${bounded(activity.summary.browserCalls)}</text>
+<text x="248" y="334" font-size="12" opacity=".72">Computer use</text><text x="248" y="360" font-size="20" font-weight="600">${bounded(activity.summary.computerUseCalls)}</text>
+<text x="464" y="334" font-size="12" opacity=".72">Other tools</text><text x="464" y="360" font-size="20" font-weight="600">${bounded(activity.summary.otherToolCalls)}</text>
 <text x="680" y="334" font-size="12" opacity=".72">Fast mode</text><text x="680" y="360" font-size="20" font-weight="600">${percent(activity.summary.fastModePercent)}</text>
 <text x="32" y="405" font-size="14" font-weight="600">Reasoning</text>
 <text x="32" y="430" font-size="11" opacity=".72">none · low · medium · high · xhigh · other</text>
