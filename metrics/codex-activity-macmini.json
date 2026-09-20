@@ -23,8 +23,15 @@
       "longestSessionMinutes": 0,
       "fastTurns": null,
       "modeTurns": null,
-      "reasoningTurns": null,
-      "reasoning": null,
+      "reasoningTurns": 0,
+      "reasoning": {
+        "none": 0,
+        "low": 0,
+        "medium": 0,
+        "high": 0,
+        "xhigh": 0,
+        "other": 0
+      },
       "coverage": "partial"
     },
     {
@@ -43,8 +50,15 @@
       "longestSessionMinutes": 0,
       "fastTurns": null,
       "modeTurns": null,
-      "reasoningTurns": null,
-      "reasoning": null,
+      "reasoningTurns": 0,
+      "reasoning": {
+        "none": 0,
+        "low": 0,
+        "medium": 0,
+        "high": 0,
+        "xhigh": 0,
+        "other": 0
+      },
       "coverage": "partial"
     },
     {
@@ -63,8 +77,15 @@
       "longestSessionMinutes": 159,
       "fastTurns": null,
       "modeTurns": null,
-      "reasoningTurns": null,
-      "reasoning": null,
+      "reasoningTurns": 41,
+      "reasoning": {
+        "none": 0,
+        "low": 0,
+        "medium": 41,
+        "high": 0,
+        "xhigh": 0,
+        "other": 0
+      },
       "coverage": "partial"
     },
     {
@@ -83,8 +104,15 @@
       "longestSessionMinutes": 1512,
       "fastTurns": null,
       "modeTurns": null,
-      "reasoningTurns": null,
-      "reasoning": null,
+      "reasoningTurns": 73,
+      "reasoning": {
+        "none": 0,
+        "low": 0,
+        "medium": 73,
+        "high": 0,
+        "xhigh": 0,
+        "other": 0
+      },
       "coverage": "partial"
     },
     {
@@ -163,8 +191,15 @@
       "longestSessionMinutes": 0,
       "fastTurns": null,
       "modeTurns": null,
-      "reasoningTurns": null,
-      "reasoning": null,
+      "reasoningTurns": 65,
+      "reasoning": {
+        "none": 0,
+        "low": 0,
+        "medium": 65,
+        "high": 0,
+        "xhigh": 0,
+        "other": 0
+      },
       "coverage": "partial"
     },
     {
@@ -183,8 +218,15 @@
       "longestSessionMinutes": 1219,
       "fastTurns": null,
       "modeTurns": null,
-      "reasoningTurns": null,
-      "reasoning": null,
+      "reasoningTurns": 80,
+      "reasoning": {
+        "none": 0,
+        "low": 0,
+        "medium": 80,
+        "high": 0,
+        "xhigh": 0,
+        "other": 0
+      },
       "coverage": "partial"
     },
     {
@@ -223,8 +265,15 @@
       "longestSessionMinutes": 12085,
       "fastTurns": null,
       "modeTurns": null,
-      "reasoningTurns": null,
-      "reasoning": null,
+      "reasoningTurns": 73,
+      "reasoning": {
+        "none": 0,
+        "low": 0,
+        "medium": 73,
+        "high": 0,
+        "xhigh": 0,
+        "other": 0
+      },
       "coverage": "partial"
     },
     {
@@ -243,8 +292,15 @@
       "longestSessionMinutes": 1197,
       "fastTurns": null,
       "modeTurns": null,
-      "reasoningTurns": null,
-      "reasoning": null,
+      "reasoningTurns": 98,
+      "reasoning": {
+        "none": 0,
+        "low": 0,
+        "medium": 98,
+        "high": 0,
+        "xhigh": 0,
+        "other": 0
+      },
       "coverage": "partial"
     },
     {
@@ -263,8 +319,15 @@
       "longestSessionMinutes": 1628,
       "fastTurns": null,
       "modeTurns": null,
-      "reasoningTurns": null,
-      "reasoning": null,
+      "reasoningTurns": 247,
+      "reasoning": {
+        "none": 0,
+        "low": 0,
+        "medium": 247,
+        "high": 0,
+        "xhigh": 0,
+        "other": 0
+      },
       "coverage": "partial"
     },
     {
@@ -283,8 +346,15 @@
       "longestSessionMinutes": 1388,
       "fastTurns": null,
       "modeTurns": null,
-      "reasoningTurns": null,
-      "reasoning": null,
+      "reasoningTurns": 63,
+      "reasoning": {
+        "none": 0,
+        "low": 0,
+        "medium": 63,
+        "high": 0,
+        "xhigh": 0,
+        "other": 0
+      },
       "coverage": "partial"
     },
     {
@@ -303,8 +373,15 @@
       "longestSessionMinutes": 0,
       "fastTurns": null,
       "modeTurns": null,
-      "reasoningTurns": null,
-      "reasoning": null,
+      "reasoningTurns": 1,
+      "reasoning": {
+        "none": 0,
+        "low": 0,
+        "medium": 1,
+        "high": 0,
+        "xhigh": 0,
+        "other": 0
+      },
       "coverage": "partial"
     },
     {
@@ -323,8 +400,15 @@
       "longestSessionMinutes": 8659,
       "fastTurns": null,
       "modeTurns": null,
-      "reasoningTurns": null,
-      "reasoning": null,
+      "reasoningTurns": 18,
+      "reasoning": {
+        "none": 0,
+        "low": 0,
+        "medium": 18,
+        "high": 0,
+        "xhigh": 0,
+        "other": 0
+      },
       "coverage": "partial"
     },
     {
@@ -423,8 +507,15 @@
       "longestSessionMinutes": 2932,
       "fastTurns": null,
       "modeTurns": null,
-      "reasoningTurns": null,
-      "reasoning": null,
+      "reasoningTurns": 11,
+      "reasoning": {
+        "none": 0,
+        "low": 0,
+        "medium": 11,
+        "high": 0,
+        "xhigh": 0,
+        "other": 0
+      },
       "coverage": "partial"
     },
     {
@@ -443,8 +534,15 @@
       "longestSessionMinutes": 12,
       "fastTurns": null,
       "modeTurns": null,
-      "reasoningTurns": null,
-      "reasoning": null,
+      "reasoningTurns": 3,
+      "reasoning": {
+        "none": 0,
+        "low": 0,
+        "medium": 3,
+        "high": 0,
+        "xhigh": 0,
+        "other": 0
+      },
       "coverage": "partial"
     },
     {
@@ -463,8 +561,15 @@
       "longestSessionMinutes": 0,
       "fastTurns": null,
       "modeTurns": null,
-      "reasoningTurns": null,
-      "reasoning": null,
+      "reasoningTurns": 5,
+      "reasoning": {
+        "none": 0,
+        "low": 0,
+        "medium": 5,
+        "high": 0,
+        "xhigh": 0,
+        "other": 0
+      },
       "coverage": "partial"
     },
     {
@@ -589,7 +694,7 @@
     },
     {
       "date": "2026-09-20",
-      "active": null,
+      "active": true,
       "activeSessions": null,
       "newChats": null,
       "toolCalls": null,
@@ -598,8 +703,8 @@
       "computerUseCalls": null,
       "otherToolCalls": null,
       "skillUses": null,
-      "tokens": 0,
-      "maxSessionTokens": 0,
+      "tokens": null,
+      "maxSessionTokens": null,
       "longestSessionMinutes": null,
       "fastTurns": null,
       "modeTurns": null,

@@ -44,7 +44,14 @@
       "maxSessionTokens": 129588293,
       "longestSessionMinutes": 130,
       "fastModePercent": null,
-      "reasoningPercent": null,
+      "reasoningPercent": {
+        "none": 0,
+        "low": 0,
+        "medium": 100,
+        "high": 0,
+        "xhigh": 0,
+        "other": 0
+      },
       "coverage": "partial"
     },
     {
@@ -224,7 +231,14 @@
       "maxSessionTokens": 256318310,
       "longestSessionMinutes": 12085,
       "fastModePercent": null,
-      "reasoningPercent": null,
+      "reasoningPercent": {
+        "none": 0,
+        "low": 0,
+        "medium": 100,
+        "high": 0,
+        "xhigh": 0,
+        "other": 0
+      },
       "coverage": "partial"
     },
     {
@@ -296,7 +310,14 @@
       "maxSessionTokens": 295476810,
       "longestSessionMinutes": 0,
       "fastModePercent": null,
-      "reasoningPercent": null,
+      "reasoningPercent": {
+        "none": 0,
+        "low": 0,
+        "medium": 100,
+        "high": 0,
+        "xhigh": 0,
+        "other": 0
+      },
       "coverage": "partial"
     },
     {
@@ -422,7 +443,14 @@
       "maxSessionTokens": 138617950,
       "longestSessionMinutes": 1807,
       "fastModePercent": null,
-      "reasoningPercent": null,
+      "reasoningPercent": {
+        "none": 0,
+        "low": 0,
+        "medium": 100,
+        "high": 0,
+        "xhigh": 0,
+        "other": 0
+      },
       "coverage": "partial"
     },
     {
@@ -562,8 +590,8 @@
       "computerUseCalls": null,
       "otherToolCalls": null,
       "skillUses": null,
-      "tokens": 0,
-      "maxSessionTokens": 0,
+      "tokens": null,
+      "maxSessionTokens": null,
       "longestSessionMinutes": null,
       "fastModePercent": null,
       "reasoningPercent": null,
