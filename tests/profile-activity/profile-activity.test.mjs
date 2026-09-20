@@ -27,7 +27,7 @@ function accountActivitySample() {
   const skillUses = [38, 248, 97, 221, 165, 97, 187, 361, 221, 204, 115, 200, 120, 22, 16, 249, 197, 74, 198, 131, 97, 35, 62, 205, 119, 74, 53, 147, 279, 6];
   const start = new Date('2026-08-22T00:00:00Z');
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     observedDate: '2026-09-20',
     analytics: {
       readSucceeded: true,
@@ -45,13 +45,18 @@ function accountActivitySample() {
         skillUses: skillUses[index],
       })),
     },
-    profile: {
+    tokenUsage: {
       readSucceeded: true,
-      definition: 'profile-daily-tokens',
+      window: { from: '2026-08-22', to: '2026-09-20' },
+      definition: 'chatgpt-account-token-activity',
       refreshCadence: null,
       localComparable: false,
-      automatedCollection: false,
-      tokenDay: { date: '2026-09-06', displayValue: 10.7, scale: 100000000, precision: 'rounded-display' },
+      automatedCollection: true,
+      summary: { lifetimeTokens: 41126977768, peakDailyTokens: 1067831636, longestRunningTurnSec: 59711, currentStreakDays: 35, longestStreakDays: 35 },
+      days: [178485366, 703395684, 248176351, 607569497, 465750366, 414338860, 529042659, 853211539, 627925357, 540039339, 354940383, 531010479, 835243000, 682923095, 169143256, 1067831636, 824793462, 510744953, 1006149964, 813943995, 299176144, 218087542, 509810549, 839844303, 351871988, 182573890, 104006627, 505572752, 863817998, 140052192].map((tokens, index) => ({
+        date: new Date(start.valueOf() + index * 86400000).toISOString().slice(0, 10),
+        tokens,
+      })),
     },
   };
 }
@@ -93,7 +98,7 @@ async function installedCollectorFixture() {
   return { root, runtimeDir, stateDir, config, receiptFile, cli: path.join(runtimeDir, 'cli.mjs'), delivery: path.join(runtimeDir, 'delivery-execution.mjs') };
 }
 
-async function installedPublisherFixture() {
+async function installedPublisherFixture({ collectionPath } = {}) {
   const root = await temp();
   const stateDir = path.join(root, 'state');
   const logs = path.join(root, 'logs');
@@ -110,6 +115,7 @@ async function installedPublisherFixture() {
     schemaVersion: 1, role: 'publisher', sourceId: SOURCE_B, policyId: 'local-codex-v1-kst-exclude-profile', codexHome: root, logRoots: [logs], stateDir, transportDir: root,
     runtimeDir, runtimeManifest, excludedRepoRoots: [], expectedSources: [{ sourceId: SOURCE_B, location: 'local', file: path.join(root, 'self.json') }, { sourceId: SOURCE_A, location: 'transport', file: path.join(root, 'remote.json') }], independentSources: true, publicDays: 30, retentionDays: 90, staleAfterHours: 48, timezone: 'Asia/Seoul',
     publisher: { repoDir: root, remote: 'synthetic', branch: 'main', candidateRoot: path.join(root, 'candidates'), retryLimit: 0, hooksPath: '', hooksManifest: {} },
+    ...(collectionPath ? { transportDir: null, expectedSources: [], publisher: { repoDir: root, remote: 'synthetic', branch: 'main', candidateRoot: path.join(root, 'candidates'), retryLimit: 0, hooksPath: '', hooksManifest: {}, collectionPath } } : {}),
   });
   await writeFile(config, configText);
   const receiptFile = path.join(stateDir, 'installation-receipt.json');
@@ -612,13 +618,14 @@ test('account usage rejects identifiers, billing metadata, raw responses, extras
   assert.throws(() => parseAccountUsage({ ...sample, observedAt: null }), /observedAt/);
 });
 
-test('account activity accepts only verified anonymous UI fields and reconciles exact totals', async () => {
+test('account activity accepts verified Analytics and exact App Server token usage', async () => {
   const { parseAccountActivity } = await import('../../scripts/profile-activity/account-activity.mjs');
   const sample = accountActivitySample();
   assert.deepEqual(parseAccountActivity(sample), sample);
   assert.equal(sample.analytics.days.reduce((sum, day) => sum + (day.turns ?? 0), 0), sample.analytics.totals.turns);
   assert.equal(sample.analytics.days.reduce((sum, day) => sum + (day.pluginCalls ?? 0), 0), sample.analytics.totals.pluginCalls);
   assert.equal(sample.analytics.days.reduce((sum, day) => sum + (day.skillUses ?? 0), 0), sample.analytics.totals.skillUses);
+  assert.equal(sample.tokenUsage.days.find(({ date }) => date === '2026-09-06').tokens, 1067831636);
   for (const extra of ['accountId', 'sourceId', 'cookie', 'rawResponse', 'path']) {
     assert.throws(() => parseAccountActivity({ ...sample, [extra]: 'PRIVATE-CANARY' }), /keys/);
   }
@@ -637,7 +644,7 @@ test('comparable account metrics replace missing or smaller local values and ref
   assert.throws(() => mergeVerifiedMetric(11, 10, { sameDefinition: true, samePeriod: true }), /contradiction/);
 });
 
-test('verified account activity stays separate from local counts and drives bilingual dashboard copy', async () => {
+test('verified account activity uses App Server tokens and drives bilingual dashboard copy', async () => {
   const { processActivitySurface } = await import('../../scripts/profile-activity/account-usage.mjs');
   const result = processActivitySurface([
     makeV3Input(),
@@ -647,20 +654,49 @@ test('verified account activity stays separate from local counts and drives bili
   assert.equal(result.activity.metricScope, 'codex-activity-evidence');
   assert.equal(result.activity.summary.pluginCalls, 0);
   assert.equal(result.activity.accountActivity.analytics.totals.pluginCalls, 12922);
-  assert.equal(parsePublicActivity(result.activity).accountActivity.profile.tokenDay.displayValue, 10.7);
+  assert.equal(parsePublicActivity(result.activity).accountActivity.tokenUsage.summary.lifetimeTokens, 41126977768);
 
   const english = renderActivitySvg(result.activity);
   const korean = renderActivitySvg(result.activity, 'ko');
+  assert.match(english, /Account lifetime tokens/);
+  assert.match(english, /41\.13B/);
   assert.match(english, /Account turns/);
   assert.match(english, /Plugin calls/);
   assert.match(english, /Skills used/);
-  assert.match(english, /Local token floor/);
-  assert.match(english, /Profile token display/);
+  assert.match(english, /Daily account tokens/);
+  assert.match(english, /Peak account day/);
   assert.match(english, /1\.07B/);
-  assert.match(korean, /계정 턴/);
-  assert.match(korean, /프로필 토큰 표시/);
-  assert.match(korean, /10\.7억/);
+  assert.match(korean, /계정 누적 토큰/);
+  assert.match(korean, /411\.27억/);
+  assert.match(korean, /최고 사용일/);
   assert.doesNotMatch(english, /Observed tokens|Unavailable|Not observed/);
+});
+
+test('App Server account usage is reduced to anonymous exact public fields', async () => {
+  const { sanitizeAccountUsageResponse } = await import('../../scripts/profile-activity/app-server-usage.mjs');
+  const sample = sanitizeAccountUsageResponse({
+    summary: { lifetimeTokens: 41126977768, peakDailyTokens: 1067831636, longestRunningTurnSec: 59711, currentStreakDays: 35, longestStreakDays: 35, privateExtra: 'PRIVATE-CANARY' },
+    dailyUsageBuckets: [{ startDate: '2026-09-06', tokens: 1067831636 }, { startDate: '2025-01-01', tokens: 1 }],
+    threadUsage: { private: 'PRIVATE-CANARY' },
+  }, { from: '2026-08-22', to: '2026-09-20' });
+  assert.equal(sample.days.length, 1);
+  assert.equal(sample.days[0].tokens, 1067831636);
+  assert.doesNotMatch(stableJson(sample), /PRIVATE-CANARY|threadUsage|privateExtra/);
+});
+
+test('App Server collector keeps stdin open until the delayed usage response arrives', async () => {
+  const { readAccountTokenUsage } = await import('../../scripts/profile-activity/app-server-usage.mjs');
+  const root = await temp();
+  const fakeCodex = path.join(root, 'codex');
+  await writeFile(fakeCodex, `#!/usr/bin/env node
+process.stdin.resume();
+process.stdin.on('end', () => process.exit(0));
+setTimeout(() => process.stdout.write(JSON.stringify({ id: 7, result: { summary: { lifetimeTokens: 100, peakDailyTokens: 20, longestRunningTurnSec: 3, currentStreakDays: 2, longestStreakDays: 4 }, dailyUsageBuckets: [{ startDate: '2026-09-20', tokens: 20 }], threadUsage: null } }) + '\\n'), 30);
+`);
+  await chmod(fakeCodex, 0o700);
+  const result = await readAccountTokenUsage({ codexBinary: fakeCodex, window: { from: '2026-08-22', to: '2026-09-20' }, timeoutMs: 1000 });
+  assert.equal(result.summary.lifetimeTokens, 100);
+  assert.deepEqual(result.days, [{ date: '2026-09-20', tokens: 20 }]);
 });
 
 test('installed run accepts one private account sample without exposing it in CLI output', async () => {
@@ -682,6 +718,12 @@ test('installed run stores verified account activity once and reuses it without 
   const result = deliveryExecution.createInstalledCliInvocation({ receiptFile: fixture.receiptFile, command: 'run', input: sample, inputKind: 'account-activity' }).run();
   assert.doesNotMatch(stableJson(result), /8133|12922|4238|accountActivity/);
   assert.deepEqual(JSON.parse(await readFile(path.join(fixture.stateDir, 'account-activity.json'), 'utf8')), sample);
+});
+
+test('Mac mini publisher refuses duplicate account activity collection', async () => {
+  const fixture = await installedPublisherFixture({ collectionPath: 'metrics/codex-activity-macmini.json' });
+  assert.throws(() => deliveryExecution.createInstalledCliInvocation({ receiptFile: fixture.receiptFile, command: 'run', input: accountActivitySample(), inputKind: 'account-activity' }).run());
+  await assert.rejects(readFile(path.join(fixture.stateDir, 'account-activity.json'), 'utf8'));
 });
 
 test('v3 envelope uses a version-matched schema and retains no category identity', () => {

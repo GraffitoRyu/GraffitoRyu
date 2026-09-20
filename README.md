@@ -40,7 +40,7 @@ I work across product interfaces, design systems, and front-end foundations — 
 I use Codex for implementation, refactoring, review, and repeatable development work while keeping the product context and acceptance criteria explicit.
 
 <a href="./assets/codex-activity.svg">
-  <img src="./assets/codex-activity.svg" alt="Codex account and local activity evidence dashboard" width="900" />
+  <img src="./assets/codex-activity.svg" alt="Codex account activity dashboard" width="900" />
 </a>
 
 [한국어 보기 →](./assets/codex-activity-ko.svg) · [How it works](./docs/profile-activity.md)

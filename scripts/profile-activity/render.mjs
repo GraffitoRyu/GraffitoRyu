@@ -12,6 +12,13 @@ function compactNumber(value) {
   return value === null ? 'Unavailable' : new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
 }
 
+function compactExact(value, locale = 'en') {
+  if (value === null) return 'Unavailable';
+  const divisor = locale === 'ko' ? 1e8 : value >= 1e9 ? 1e9 : value >= 1e6 ? 1e6 : value >= 1e3 ? 1e3 : 1;
+  const suffix = locale === 'ko' ? '억' : divisor === 1e9 ? 'B' : divisor === 1e6 ? 'M' : divisor === 1e3 ? 'K' : '';
+  return `${(value / divisor).toLocaleString(locale === 'ko' ? 'ko-KR' : 'en-US', { maximumFractionDigits: 2 })}${suffix}`;
+}
+
 function compactLowerBound(value, locale = 'en') {
   if (value === null) return 'Unavailable';
   const units = locale === 'ko'
@@ -33,43 +40,43 @@ function renderSurface(activity, locale) {
   const ko = locale === 'ko';
   const evidence = activity.schemaVersion === 4;
   const copy = ko ? {
-    title: evidence ? 'Codex 활동 근거' : 'Codex로 만든 30일', subtitle: evidence ? '계정 Analytics 스냅샷 · 최근 30일 로컬 토큰 하한' : '최근 30일 로컬 활동 관측', tokens: evidence ? '로컬 토큰 하한' : '관측 토큰', sessions: evidence ? '계정 턴' : '관측 세션 시작', tools: evidence ? 'Plugin 호출' : '도구 호출', active: evidence ? '사용한 Skill' : '활동일', chart: evidence ? '일별 로컬 토큰 하한' : '일별 토큰 활동', insights: evidence ? '같은 날의 별도 근거' : '활동 인사이트', highestDay: evidence ? '프로필 토큰 표시' : '가장 높은 관측일', median: evidence ? '로컬 관측 하한' : '관측 일일 토큰 중앙값', footer: evidence ? '계정 Analytics와 로컬 텔레메트리 · 정의 미검증으로 미병합' : '로컬 관측 · 익명 집계', outside: '토큰 관측 범위 밖', tokenDays: '토큰 관측', lowerBound: '+ 하한', tokenUnit: '토큰', description: evidence ? '계정 Analytics와 로컬 Codex 텔레메트리를 분리해 표시한 활동 근거.' : '최근 30일의 익명 Codex 활동.',
+    title: evidence ? 'Codex 계정 활동' : 'Codex로 만든 30일', subtitle: evidence ? '공식 App Server 토큰 · 계정 Analytics' : '최근 30일 로컬 활동 관측', tokens: evidence ? '계정 누적 토큰' : '관측 토큰', sessions: evidence ? '계정 턴' : '관측 세션 시작', tools: evidence ? 'Plugin 호출' : '도구 호출', active: evidence ? '사용한 Skill' : '활동일', chart: evidence ? '일별 계정 토큰' : '일별 토큰 활동', insights: evidence ? '계정 토큰 인사이트' : '활동 인사이트', highestDay: evidence ? '최고 사용일' : '가장 높은 관측일', median: evidence ? '현재 / 최장 연속 활동' : '관측 일일 토큰 중앙값', footer: evidence ? '토큰은 Codex App Server 자동 수집 · Analytics 횟수는 계정 UI 확인' : '로컬 관측 · 익명 집계', outside: evidence ? '토큰 데이터 없음' : '토큰 관측 범위 밖', tokenDays: '토큰 일수', lowerBound: '+ 하한', tokenUnit: '토큰', description: evidence ? '공식 Codex App Server 토큰과 계정 Analytics 활동.' : '최근 30일의 익명 Codex 활동.',
   } : {
-    title: evidence ? 'Codex activity evidence' : '30 days building with Codex', subtitle: evidence ? 'Account Analytics snapshot · local 30-day token floor' : 'Observed local activity · last 30 days', tokens: evidence ? 'Local token floor' : 'Observed tokens', sessions: evidence ? 'Account turns' : 'Observed session starts', tools: evidence ? 'Plugin calls' : 'Tool calls', active: evidence ? 'Skills used' : 'Active days', chart: evidence ? 'Daily local token floor' : 'Daily token activity', insights: evidence ? 'Separate evidence · same day' : 'Activity insights', highestDay: evidence ? 'Profile token display' : 'Highest observed day', median: evidence ? 'Local observed floor' : 'Median observed daily tokens', footer: evidence ? 'Account Analytics + local telemetry · not merged without matching definitions' : 'Observed locally · anonymous aggregate', outside: 'outside token coverage', tokenDays: 'token days', lowerBound: '+ lower bound', tokenUnit: 'tokens', description: evidence ? 'Account Analytics and local Codex telemetry shown as separate activity evidence.' : 'Anonymous Codex activity over the last 30 days.',
+    title: evidence ? 'Codex account activity' : '30 days building with Codex', subtitle: evidence ? 'Official App Server tokens · account Analytics' : 'Observed local activity · last 30 days', tokens: evidence ? 'Account lifetime tokens' : 'Observed tokens', sessions: evidence ? 'Account turns' : 'Observed session starts', tools: evidence ? 'Plugin calls' : 'Tool calls', active: evidence ? 'Skills used' : 'Active days', chart: evidence ? 'Daily account tokens' : 'Daily token activity', insights: evidence ? 'Account token insights' : 'Activity insights', highestDay: evidence ? 'Peak account day' : 'Highest observed day', median: evidence ? 'Current / longest streak' : 'Median observed daily tokens', footer: evidence ? 'Tokens collected automatically via Codex App Server · Analytics counts verified in account UI' : 'Observed locally · anonymous aggregate', outside: evidence ? 'no token data' : 'outside token coverage', tokenDays: 'token days', lowerBound: '+ lower bound', tokenUnit: 'tokens', description: evidence ? 'Official Codex App Server token activity and account Analytics.' : 'Anonymous Codex activity over the last 30 days.',
   };
   const partial = activity.status === 'partial';
   const bounded = (value, formatter = number) => value === null ? '—' : `${formatter(value)}${partial ? '+' : ''}`;
-  const knownTokens = activity.days.flatMap((day) => day.tokens === null ? [] : [day.tokens]);
+  const tokenUsage = evidence ? activity.accountActivity.tokenUsage : null;
+  const accountTokens = new Map(tokenUsage?.days.map((day) => [day.date, day.tokens]) ?? []);
+  const chartDays = evidence ? activity.days.map((day) => ({ ...day, tokens: accountTokens.get(day.date) ?? null, coverage: accountTokens.has(day.date) ? 'complete' : 'unknown' })) : activity.days;
+  const knownTokens = chartDays.flatMap((day) => day.tokens === null ? [] : [day.tokens]);
   const orderedTokens = [...knownTokens].sort((a, b) => a - b);
   const middle = Math.floor(orderedTokens.length / 2);
   const median = orderedTokens.length === 0 ? null : orderedTokens.length % 2 === 1 ? orderedTokens[middle] : Math.floor((orderedTokens[middle - 1] + orderedTokens[middle]) / 2);
   const observedMaximum = knownTokens.length === 0 ? null : Math.max(...knownTokens);
-  const peakDay = observedMaximum === null ? null : activity.days.find((day) => day.tokens === observedMaximum) ?? null;
+  const peakDay = observedMaximum === null ? null : chartDays.find((day) => day.tokens === observedMaximum) ?? null;
   const scaleMaximum = Math.max(1, observedMaximum ?? 0);
-  const bars = activity.days.map((day, index) => {
+  const bars = chartDays.map((day, index) => {
     const x = 68 + index * 27;
     if (day.tokens === null) return `<rect class="token-bar token-unknown" x="${x}" y="318" width="15" height="8" rx="3" fill="none" stroke="#8c959f" stroke-dasharray="2 2" opacity=".7"><title>${escapeXml(day.date)}: ${copy.outside}</title></rect>`;
     const height = Math.max(day.tokens === 0 ? 2 : 5, Math.round(day.tokens / scaleMaximum * 128));
     const lowerBound = day.coverage !== 'complete';
-    const tokenValue = lowerBound ? compactLowerBound(day.tokens, locale) : compactNumber(day.tokens);
+    const tokenValue = evidence ? number(day.tokens) : lowerBound ? compactLowerBound(day.tokens, locale) : compactNumber(day.tokens);
     return `<rect class="token-bar" x="${x}" y="${326 - height}" width="15" height="${height}" rx="3" fill="#2f81f7"><title>${escapeXml(day.date)}: ${tokenValue}${lowerBound ? '+' : ''} ${copy.tokenUnit}</title></rect>`;
   }).join('');
-  const ticks = [0, 7, 14, 21, 29].map((index) => `<text x="${75.5 + index * 27}" y="348" font-size="9" text-anchor="middle" opacity=".62">${activity.days[index].date.slice(5)}</text>`).join('');
+  const ticks = [0, 7, 14, 21, 29].map((index) => `<text x="${75.5 + index * 27}" y="348" font-size="9" text-anchor="middle" opacity=".62">${chartDays[index].date.slice(5)}</text>`).join('');
   const coverage = ko
-    ? `${knownTokens.length} / ${activity.days.length}일 ${copy.tokenDays}${partial ? ` · ${copy.lowerBound}` : ''}`
-    : `${knownTokens.length} / ${activity.days.length} ${copy.tokenDays}${partial ? ` · ${copy.lowerBound}` : ''}`;
-  const compact = (value) => compactLowerBound(value, locale);
+    ? `${knownTokens.length} / ${chartDays.length}일 ${copy.tokenDays}${!evidence && partial ? ` · ${copy.lowerBound}` : ''}`
+    : `${knownTokens.length} / ${chartDays.length} ${copy.tokenDays}${!evidence && partial ? ` · ${copy.lowerBound}` : ''}`;
+  const compact = (value) => evidence ? compactExact(value, locale) : compactLowerBound(value, locale);
   const analytics = evidence ? activity.accountActivity.analytics : null;
-  const profileDay = evidence ? activity.accountActivity.profile.tokenDay : null;
-  const localProfileDay = profileDay === null ? null : activity.days.find((day) => day.date === profileDay.date) ?? null;
-  const profileValue = profileDay === null ? '—' : ko ? `${profileDay.displayValue.toLocaleString('ko-KR')}억` : `${(profileDay.displayValue / 10).toLocaleString('en-US', { maximumFractionDigits: 2 })}B`;
-  const firstValue = evidence ? number(analytics.totals.turns) : bounded(activity.summary.totalTokens, compact);
-  const secondValue = evidence ? number(analytics.totals.pluginCalls) : bounded(activity.summary.newChats);
-  const thirdValue = evidence ? number(analytics.totals.skillUses) : bounded(activity.summary.toolCalls);
-  const fourthValue = evidence ? bounded(activity.summary.totalTokens, compact) : activity.summary.activeDays === null ? '—' : `${number(activity.summary.activeDays)} / ${activity.days.length}`;
-  const [firstLabel, secondLabel, thirdLabel, fourthLabel] = evidence ? [copy.sessions, copy.tools, copy.active, copy.tokens] : [copy.tokens, copy.sessions, copy.tools, copy.active];
-  const leftInsight = evidence ? `${profileDay.date.slice(5)} · ${profileValue}` : peakDay === null ? '—' : peakDay.date.slice(5);
-  const rightInsight = evidence ? localProfileDay?.tokens === null || localProfileDay === null ? '—' : `${localProfileDay.date.slice(5)} · ${bounded(localProfileDay.tokens, compact)}` : bounded(median, compact);
+  const firstValue = evidence ? compact(tokenUsage.summary.lifetimeTokens) : bounded(activity.summary.totalTokens, compact);
+  const secondValue = evidence ? number(analytics.totals.turns) : bounded(activity.summary.newChats);
+  const thirdValue = evidence ? number(analytics.totals.pluginCalls) : bounded(activity.summary.toolCalls);
+  const fourthValue = evidence ? number(analytics.totals.skillUses) : activity.summary.activeDays === null ? '—' : `${number(activity.summary.activeDays)} / ${activity.days.length}`;
+  const [firstLabel, secondLabel, thirdLabel, fourthLabel] = evidence ? [copy.tokens, copy.sessions, copy.tools, copy.active] : [copy.tokens, copy.sessions, copy.tools, copy.active];
+  const leftInsight = peakDay === null ? '—' : evidence ? `${peakDay.date.slice(5)} · ${compact(peakDay.tokens)}` : peakDay.date.slice(5);
+  const rightInsight = evidence ? `${number(tokenUsage.summary.currentStreakDays)}d / ${number(tokenUsage.summary.longestStreakDays)}d` : bounded(median, compact);
   return `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="590" viewBox="0 0 900 590" role="img" aria-labelledby="title description">
 <title id="title">${copy.title}</title>
 <desc id="description">${copy.description} ${escapeXml(coverage)}</desc>

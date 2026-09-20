@@ -9,7 +9,9 @@ let activityCollectionFromSnapshot;
 let aggregateCollections;
 let currentActivityCollections;
 let attachAccountActivity;
+let attachAccountTokenUsage;
 let parseAccountActivity;
+let readAccountTokenUsage;
 let parseAccountUsage;
 let processActivitySurface;
 let atomicWrite;
@@ -74,7 +76,8 @@ async function verifyBeforeImport(argv) {
 
 async function loadRuntime() {
   ({ attachAccountActivity, parseAccountUsage, processActivitySurface } = await import('./account-usage.mjs'));
-  ({ parseAccountActivity } = await import('./account-activity.mjs'));
+  ({ attachAccountTokenUsage, parseAccountActivity } = await import('./account-activity.mjs'));
+  ({ readAccountTokenUsage } = await import('./app-server-usage.mjs'));
   ({ aggregateCollections } = await import('./aggregate.mjs'));
   ({ activityCollectionFromSnapshot, currentActivityCollections } = await import('./collection.mjs'));
   ({ collectLogRoots, probeLogRoots } = await import('./collect.mjs'));
@@ -245,11 +248,13 @@ async function main() {
     return;
   }
   if (!config.publisher) throw new Error('publisher config required');
+  const accountActivityOwner = config.publisher.collectionPath !== 'metrics/codex-activity-macmini.json';
   let accountUsage = null;
   let accountActivity = null;
   const usageInput = args.command === 'run' && process.argv.includes('--account-usage-stdin');
   const activityInput = args.command === 'run' && process.argv.includes('--account-activity-stdin');
   if (usageInput && activityInput) throw new Error('single private input required');
+  if (activityInput && !accountActivityOwner) throw new Error('account activity owner required');
   if (usageInput) {
     accountUsage = parseAccountUsage(await readPrivateInput());
     if (accountUsage !== null) {
@@ -261,9 +266,15 @@ async function main() {
     accountActivity = parseAccountActivity(await readPrivateInput());
     await atomicWrite(path.join(config.stateDir, 'account-activity.json'), accountActivity, config.stateDir);
     stateChanged = true;
-  } else {
+  } else if (accountActivityOwner) {
     try { accountActivity = parseAccountActivity(JSON.parse(await readFile(path.join(config.stateDir, 'account-activity.json'), 'utf8'))); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
+  }
+  if (accountActivityOwner && accountActivity !== null && config.codexBinary) {
+    const tokenUsage = await readAccountTokenUsage({ codexBinary: config.codexBinary, window: { from: addDays(asOfDate, -29), to: asOfDate } });
+    accountActivity = attachAccountTokenUsage(accountActivity, tokenUsage, asOfDate);
+    await atomicWrite(path.join(config.stateDir, 'account-activity.json'), accountActivity, config.stateDir);
+    stateChanged = true;
   }
   const now = new Date().toISOString();
   if (config.publisher?.collectionPath) {
@@ -288,6 +299,7 @@ async function main() {
     const result = await publishOwnedCollection(config, collection, {
       referenceTime: now,
       buildFinal: async (values) => {
+        if (!accountActivityOwner) return null;
         const current = currentActivityCollections(values, asOfDate);
         if (current === null) return null;
         const activity = attachAccountActivity(aggregateCollections(current, { asOfDate, referenceTime: now, staleAfterHours: config.staleAfterHours }), accountActivity);

@@ -14,7 +14,7 @@ function keys(value, allowed, name) {
 }
 
 export function parseConfig(value) {
-  const allowed = ['schemaVersion', 'role', 'sourceId', 'policyId', 'codexHome', 'logRoots', 'stateDir', 'transportDir', 'runtimeDir', 'runtimeManifest', 'excludedRepoRoots', 'expectedSources', 'independentSources', 'publicDays', 'retentionDays', 'staleAfterHours', 'timezone', 'publisher', 'launchAgent'];
+  const allowed = ['schemaVersion', 'role', 'sourceId', 'policyId', 'codexHome', 'codexBinary', 'logRoots', 'stateDir', 'transportDir', 'runtimeDir', 'runtimeManifest', 'excludedRepoRoots', 'expectedSources', 'independentSources', 'publicDays', 'retentionDays', 'staleAfterHours', 'timezone', 'publisher', 'launchAgent'];
   keys(value, allowed, 'config');
   if (value.schemaVersion !== 1 || !['collector', 'publisher'].includes(value.role)) throw new Error('invalid config identity');
   if (!UUID.test(value.sourceId) || value.policyId !== 'local-codex-v1-kst-exclude-profile' || value.timezone !== 'Asia/Seoul') throw new Error('invalid config policy');
@@ -58,6 +58,7 @@ export function parseConfig(value) {
   return {
     ...value,
     codexHome,
+    codexBinary: value.codexBinary === undefined ? undefined : absolute(value.codexBinary, 'codexBinary'),
     logRoots,
     stateDir: absolute(value.stateDir, 'stateDir'),
     transportDir: value.transportDir === null ? null : absolute(value.transportDir, 'transportDir'),

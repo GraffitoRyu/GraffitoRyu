@@ -139,6 +139,8 @@ async function main() {
   const sourcePackage = await committedSourcePackage(args[commitIndex + 1]);
   const { files, manifest, sourceCommit } = sourcePackage;
   const digest = digestManifest(manifest);
+  const codexBinary = (await run('/usr/bin/which', ['codex'], { encoding: 'utf8' })).stdout.trim();
+  if (!path.isAbsolute(codexBinary)) throw new Error('codex binary unavailable');
   if (args[0] === '--replace') {
     const collector = config.role === 'collector';
     if (!config.publisher || collector !== Boolean(config.launchAgent)) throw new Error('publisher replacement required');
@@ -166,7 +168,7 @@ async function main() {
       for (const name of Object.keys(manifest)) await writeFile(path.join(target, name), files[name], { flag: 'wx', mode: 0o600 });
       await writeFile(path.join(target, 'manifest.json'), stableJson(manifest), { flag: 'wx', mode: 0o600 });
       await verifyRuntimeManifest(target, manifest);
-      const installedConfig = stableJson({ ...config, publisher, runtimeDir: target, runtimeManifest: manifest });
+      const installedConfig = stableJson({ ...config, codexBinary, publisher, runtimeDir: target, runtimeManifest: manifest });
       const receipt = (registration) => stableJson({ schemaVersion: 1, role: config.role, sourceCommit, stateDir: config.stateDir, runtimeDir: target, runtimeDigest: digest, runtimeManifestDigest: digestManifest(manifest), installedConfigDigest: createHash('sha256').update(installedConfig).digest('hex'), nodeBinary: process.execPath, gitBinary, launchAgentLabel: collector ? config.launchAgent.label : null, launchAgentDigest, registration });
       await writeFile(configTemp, installedConfig, { flag: 'wx', mode: 0o600 });
       await writeFile(receiptTemp, receipt(collector ? 'pending' : 'not-created'), { flag: 'wx', mode: 0o600 });
@@ -226,7 +228,7 @@ async function main() {
     if ((publisher.hooksPath ?? '') !== hooksPath) throw new Error('Git hooks changed');
     publisher = { ...publisher, hooksManifest: await capturePublisherHooks(publisher.repoDir) };
   }
-  const installedConfig = stableJson({ ...config, publisher, runtimeDir: target, runtimeManifest: manifest });
+  const installedConfig = stableJson({ ...config, codexBinary, publisher, runtimeDir: target, runtimeManifest: manifest });
   await writeFile(installedConfigFile, installedConfig, { flag: 'wx', mode: 0o600 });
   let registration = 'not-created';
   let launchAgentDigest = null;

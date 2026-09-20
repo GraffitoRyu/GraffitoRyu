@@ -11,7 +11,7 @@
   "status": "partial",
   "aggregation": "sum",
   "accountActivity": {
-    "schemaVersion": 1,
+    "schemaVersion": 2,
     "observedDate": "2026-09-20",
     "analytics": {
       "readSucceeded": true,
@@ -212,18 +212,145 @@
         }
       ]
     },
-    "profile": {
+    "tokenUsage": {
       "readSucceeded": true,
-      "definition": "profile-daily-tokens",
+      "window": {
+        "from": "2026-08-22",
+        "to": "2026-09-20"
+      },
+      "definition": "chatgpt-account-token-activity",
       "refreshCadence": null,
       "localComparable": false,
-      "automatedCollection": false,
-      "tokenDay": {
-        "date": "2026-09-06",
-        "displayValue": 10.7,
-        "scale": 100000000,
-        "precision": "rounded-display"
-      }
+      "automatedCollection": true,
+      "summary": {
+        "lifetimeTokens": 41126977768,
+        "peakDailyTokens": 1067831636,
+        "longestRunningTurnSec": 59711,
+        "currentStreakDays": 35,
+        "longestStreakDays": 35
+      },
+      "days": [
+        {
+          "date": "2026-08-22",
+          "tokens": 178485366
+        },
+        {
+          "date": "2026-08-23",
+          "tokens": 703395684
+        },
+        {
+          "date": "2026-08-24",
+          "tokens": 248176351
+        },
+        {
+          "date": "2026-08-25",
+          "tokens": 607569497
+        },
+        {
+          "date": "2026-08-26",
+          "tokens": 465750366
+        },
+        {
+          "date": "2026-08-27",
+          "tokens": 414338860
+        },
+        {
+          "date": "2026-08-28",
+          "tokens": 529042659
+        },
+        {
+          "date": "2026-08-29",
+          "tokens": 853211539
+        },
+        {
+          "date": "2026-08-30",
+          "tokens": 627925357
+        },
+        {
+          "date": "2026-08-31",
+          "tokens": 540039339
+        },
+        {
+          "date": "2026-09-01",
+          "tokens": 354940383
+        },
+        {
+          "date": "2026-09-02",
+          "tokens": 531010479
+        },
+        {
+          "date": "2026-09-03",
+          "tokens": 835243000
+        },
+        {
+          "date": "2026-09-04",
+          "tokens": 682923095
+        },
+        {
+          "date": "2026-09-05",
+          "tokens": 169143256
+        },
+        {
+          "date": "2026-09-06",
+          "tokens": 1067831636
+        },
+        {
+          "date": "2026-09-07",
+          "tokens": 824793462
+        },
+        {
+          "date": "2026-09-08",
+          "tokens": 510744953
+        },
+        {
+          "date": "2026-09-09",
+          "tokens": 1006149964
+        },
+        {
+          "date": "2026-09-10",
+          "tokens": 813943995
+        },
+        {
+          "date": "2026-09-11",
+          "tokens": 299176144
+        },
+        {
+          "date": "2026-09-12",
+          "tokens": 218087542
+        },
+        {
+          "date": "2026-09-13",
+          "tokens": 509810549
+        },
+        {
+          "date": "2026-09-14",
+          "tokens": 839844303
+        },
+        {
+          "date": "2026-09-15",
+          "tokens": 351871988
+        },
+        {
+          "date": "2026-09-16",
+          "tokens": 182573890
+        },
+        {
+          "date": "2026-09-17",
+          "tokens": 104006627
+        },
+        {
+          "date": "2026-09-18",
+          "tokens": 505572752
+        },
+        {
+          "date": "2026-09-19",
+          "tokens": 863817998
+        },
+        {
+          "date": "2026-09-20",
+          "tokens": 140052192
+        }
+      ]
     }
   },
   "summary": {
