@@ -83,7 +83,7 @@ function renderSurface(activity, locale) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="590" viewBox="0 0 900 590" role="img" aria-labelledby="title description">
 <title id="title">${copy.title}</title>
 <desc id="description">${copy.description} ${escapeXml(coverage)}</desc>
-<defs><style>text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;fill:#e6edf3}.grid,.divider{stroke:#30363d}</style></defs>
+<defs><style>text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;fill:#e6edf3}.grid,.divider{stroke:#30363d}.panel{fill:#0d1117;fill-opacity:.96;stroke:#30363d}@media(prefers-color-scheme:dark){.panel{fill-opacity:.24}}</style></defs>
 <rect class="panel" x=".5" y=".5" width="899" height="589" rx="12" fill="#0d1117" fill-opacity=".96" stroke="#30363d"/>
 <text x="32" y="38" font-size="${type.title}" font-weight="600">${copy.title}</text>
 <text x="32" y="61" font-size="${type.subtitle}" opacity=".68">${copy.subtitle}</text>

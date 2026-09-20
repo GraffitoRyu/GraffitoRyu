@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="900" height="590" viewBox="0 0 900 590" role="img" aria-labelledby="title description">
 <title id="title">Codex account activity</title>
 <desc id="description">Official Codex App Server token activity and account Analytics. 30 / 30 token days</desc>
-<defs><style>text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;fill:#e6edf3}.grid,.divider{stroke:#30363d}</style></defs>
+<defs><style>text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;fill:#e6edf3}.grid,.divider{stroke:#30363d}.panel{fill:#0d1117;fill-opacity:.96;stroke:#30363d}@media(prefers-color-scheme:dark){.panel{fill-opacity:.24}}</style></defs>
 <rect class="panel" x=".5" y=".5" width="899" height="589" rx="12" fill="#0d1117" fill-opacity=".96" stroke="#30363d"/>
 <text x="32" y="38" font-size="20" font-weight="600">Codex account activity</text>
 <text x="32" y="61" font-size="12" opacity=".68">Official App Server tokens · account Analytics</text>

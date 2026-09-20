@@ -519,8 +519,9 @@ test('v3 renderer draws a bounded 30-day token histogram with readable axes', ()
   assert.match(svg, />9T<\/text>/);
   assert.match(svg, />08-15<\/text>/);
   assert.match(svg, />09-13<\/text>/);
-  assert.doesNotMatch(svg, /prefers-color-scheme/);
+  assert.match(svg, /@media\(prefers-color-scheme:dark\)\{\.panel\{fill-opacity:\.24\}\}/);
   assert.match(svg, /\.grid,\.divider\{stroke:#30363d\}/);
+  assert.match(svg, /\.panel\{fill:#0d1117;fill-opacity:\.96;stroke:#30363d\}/);
   assert.match(svg, /class="panel"[^>]+fill="#0d1117" fill-opacity="\.96" stroke="#30363d"/);
 });
 
@@ -674,6 +675,8 @@ test('verified account activity uses App Server tokens and drives bilingual dash
   assert.match(english, /font-size="20" font-weight="600">Codex account activity/);
   assert.match(english, /fill="#0d1117" fill-opacity="\.96"/);
   assert.match(korean, /fill="#0d1117" fill-opacity="\.96"/);
+  assert.match(english, /prefers-color-scheme:dark/);
+  assert.match(korean, /prefers-color-scheme:dark/);
   assert.doesNotMatch(english, /Observed tokens|Unavailable|Not observed/);
 });
 
