@@ -654,31 +654,37 @@ test('comparable account metrics replace missing or smaller local values and ref
   assert.throws(() => mergeVerifiedMetric(11, 10, { sameDefinition: true, samePeriod: true }), /contradiction/);
 });
 
-test('verified account activity uses App Server tokens and drives bilingual dashboard copy', async () => {
+test('public account dashboard keeps only automatically refreshed App Server metrics', async () => {
   const { processActivitySurface } = await import('../../scripts/profile-activity/account-usage.mjs');
   const result = processActivitySurface([
     makeV3Input(),
     makeV3Input({ sourceId: SOURCE_B }),
   ], options, null, accountActivitySample());
-  assert.equal(result.activity.schemaVersion, 4);
+  assert.equal(result.activity.schemaVersion, 5);
   assert.equal(result.activity.metricScope, 'codex-activity-evidence');
   assert.equal(result.activity.summary.pluginCalls, 0);
-  assert.equal(result.activity.accountActivity.analytics.totals.pluginCalls, 12922);
-  assert.equal(parsePublicActivity(result.activity).accountActivity.tokenUsage.summary.lifetimeTokens, 41126977768);
+  assert.equal(parsePublicActivity(result.activity).accountTokenUsage.summary.lifetimeTokens, 41126977768);
+  assert.doesNotMatch(stableJson(result.activity), /analytics|accountActivity|8133|12922|4238/);
 
   const english = renderActivitySvg(result.activity);
   const korean = renderActivitySvg(result.activity, 'ko');
   assert.match(english, /Account lifetime tokens/);
   assert.match(english, /41\.13B/);
-  assert.match(english, /Account turns/);
-  assert.match(english, /Plugin calls/);
-  assert.match(english, /Skills used/);
+  assert.match(english, /Peak daily tokens/);
+  assert.match(english, /Longest running turn/);
+  assert.match(english, /Current streak/);
+  assert.match(english, /Longest streak/);
+  assert.match(english, /16h 35m/);
   assert.match(english, /Daily account tokens/);
-  assert.match(english, /Peak account day/);
   assert.match(english, /1\.07B/);
+  assert.match(english, /height="410" viewBox="0 0 900 410"/);
   assert.match(korean, /계정 누적 토큰/);
   assert.match(korean, /411\.27억/);
-  assert.match(korean, /최고 사용일/);
+  assert.match(korean, /최대 일일 토큰/);
+  assert.match(korean, /최장 실행 시간/);
+  assert.match(korean, /현재 연속 기록/);
+  assert.match(korean, /최장 연속 기록/);
+  assert.match(korean, /16시간 35분/);
   assert.match(korean, /font-size="22" font-weight="600">Codex 계정 활동/);
   assert.match(korean, /font-size="14" opacity="\.68">계정 누적 토큰/);
   assert.match(english, /font-size="20" font-weight="600">Codex account activity/);
@@ -686,7 +692,7 @@ test('verified account activity uses App Server tokens and drives bilingual dash
   assert.match(korean, /fill="#f6f8fa" fill-opacity="\.02"/);
   assert.match(english, /prefers-color-scheme:dark/);
   assert.match(korean, /prefers-color-scheme:dark/);
-  assert.doesNotMatch(english, /Observed tokens|Unavailable|Not observed/);
+  assert.doesNotMatch(english, /Account turns|Plugin calls|Skills used|account Analytics|Observed tokens|Unavailable|Not observed/);
 });
 
 test('App Server account usage is reduced to anonymous exact public fields', async () => {

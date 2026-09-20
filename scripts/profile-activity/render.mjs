@@ -36,20 +36,27 @@ function duration(minutes) {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
+function durationSeconds(seconds, locale) {
+  if (seconds === null) return '—';
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor(seconds % 3600 / 60);
+  return locale === 'ko' ? `${hours}시간 ${minutes}분` : `${hours}h ${minutes}m`;
+}
+
 function renderSurface(activity, locale) {
   const ko = locale === 'ko';
   const type = ko
     ? { title: 22, subtitle: 14, label: 14, value: 27, section: 16, meta: 11, axis: 10, insight: 20, footer: 12 }
     : { title: 20, subtitle: 12, label: 12, value: 25, section: 14, meta: 10, axis: 9, insight: 18, footer: 10 };
-  const evidence = activity.schemaVersion === 4;
+  const evidence = [4, 5].includes(activity.schemaVersion);
   const copy = ko ? {
-    title: evidence ? 'Codex 계정 활동' : 'Codex로 만든 30일', subtitle: evidence ? '공식 App Server 토큰 · 계정 Analytics' : '최근 30일 로컬 활동 관측', tokens: evidence ? '계정 누적 토큰' : '관측 토큰', sessions: evidence ? '계정 턴' : '관측 세션 시작', tools: evidence ? 'Plugin 호출' : '도구 호출', active: evidence ? '사용한 Skill' : '활동일', chart: evidence ? '일별 계정 토큰' : '일별 토큰 활동', insights: evidence ? '계정 토큰 인사이트' : '활동 인사이트', highestDay: evidence ? '최고 사용일' : '가장 높은 관측일', median: evidence ? '현재 / 최장 연속 활동' : '관측 일일 토큰 중앙값', footer: evidence ? '토큰은 Codex App Server 자동 수집 · Analytics 횟수는 계정 UI 확인' : '로컬 관측 · 익명 집계', outside: evidence ? '토큰 데이터 없음' : '토큰 관측 범위 밖', tokenDays: '토큰 일수', lowerBound: '+ 하한', tokenUnit: '토큰', description: evidence ? '공식 Codex App Server 토큰과 계정 Analytics 활동.' : '최근 30일의 익명 Codex 활동.',
+    title: evidence ? 'Codex 계정 활동' : 'Codex로 만든 30일', subtitle: evidence ? '공식 Codex App Server 토큰 활동' : '최근 30일 로컬 활동 관측', tokens: evidence ? '계정 누적 토큰' : '관측 토큰', peak: '최대 일일 토큰', longestTurn: '최장 실행 시간', currentStreak: '현재 연속 기록', longestStreak: '최장 연속 기록', sessions: '관측 세션 시작', tools: '도구 호출', active: '활동일', chart: evidence ? '일별 계정 토큰' : '일별 토큰 활동', insights: '활동 인사이트', highestDay: '가장 높은 관측일', median: '관측 일일 토큰 중앙값', footer: evidence ? 'Codex App Server에서 계정 토큰 자동 수집' : '로컬 관측 · 익명 집계', outside: evidence ? '토큰 데이터 없음' : '토큰 관측 범위 밖', tokenDays: '토큰 일수', lowerBound: '+ 하한', tokenUnit: '토큰', description: evidence ? '공식 Codex App Server 계정 토큰 활동.' : '최근 30일의 익명 Codex 활동.',
   } : {
-    title: evidence ? 'Codex account activity' : '30 days building with Codex', subtitle: evidence ? 'Official App Server tokens · account Analytics' : 'Observed local activity · last 30 days', tokens: evidence ? 'Account lifetime tokens' : 'Observed tokens', sessions: evidence ? 'Account turns' : 'Observed session starts', tools: evidence ? 'Plugin calls' : 'Tool calls', active: evidence ? 'Skills used' : 'Active days', chart: evidence ? 'Daily account tokens' : 'Daily token activity', insights: evidence ? 'Account token insights' : 'Activity insights', highestDay: evidence ? 'Peak account day' : 'Highest observed day', median: evidence ? 'Current / longest streak' : 'Median observed daily tokens', footer: evidence ? 'Tokens collected automatically via Codex App Server · Analytics counts verified in account UI' : 'Observed locally · anonymous aggregate', outside: evidence ? 'no token data' : 'outside token coverage', tokenDays: 'token days', lowerBound: '+ lower bound', tokenUnit: 'tokens', description: evidence ? 'Official Codex App Server token activity and account Analytics.' : 'Anonymous Codex activity over the last 30 days.',
+    title: evidence ? 'Codex account activity' : '30 days building with Codex', subtitle: evidence ? 'Official Codex App Server token activity' : 'Observed local activity · last 30 days', tokens: evidence ? 'Account lifetime tokens' : 'Observed tokens', peak: 'Peak daily tokens', longestTurn: 'Longest running turn', currentStreak: 'Current streak', longestStreak: 'Longest streak', sessions: 'Observed session starts', tools: 'Tool calls', active: 'Active days', chart: evidence ? 'Daily account tokens' : 'Daily token activity', insights: 'Activity insights', highestDay: 'Highest observed day', median: 'Median observed daily tokens', footer: evidence ? 'Account tokens collected automatically via Codex App Server' : 'Observed locally · anonymous aggregate', outside: evidence ? 'no token data' : 'outside token coverage', tokenDays: 'token days', lowerBound: '+ lower bound', tokenUnit: 'tokens', description: evidence ? 'Official Codex App Server account token activity.' : 'Anonymous Codex activity over the last 30 days.',
   };
   const partial = activity.status === 'partial';
   const bounded = (value, formatter = number) => value === null ? '—' : `${formatter(value)}${partial ? '+' : ''}`;
-  const tokenUsage = evidence ? activity.accountActivity.tokenUsage : null;
+  const tokenUsage = evidence ? activity.schemaVersion === 5 ? activity.accountTokenUsage : activity.accountActivity.tokenUsage : null;
   const accountTokens = new Map(tokenUsage?.days.map((day) => [day.date, day.tokens]) ?? []);
   const chartDays = evidence ? activity.days.map((day) => ({ ...day, tokens: accountTokens.get(day.date) ?? null, coverage: accountTokens.has(day.date) ? 'complete' : 'unknown' })) : activity.days;
   const knownTokens = chartDays.flatMap((day) => day.tokens === null ? [] : [day.tokens]);
@@ -72,40 +79,45 @@ function renderSurface(activity, locale) {
     ? `${knownTokens.length} / ${chartDays.length}일 ${copy.tokenDays}${!evidence && partial ? ` · ${copy.lowerBound}` : ''}`
     : `${knownTokens.length} / ${chartDays.length} ${copy.tokenDays}${!evidence && partial ? ` · ${copy.lowerBound}` : ''}`;
   const compact = (value) => evidence ? compactExact(value, locale) : compactLowerBound(value, locale);
-  const analytics = evidence ? activity.accountActivity.analytics : null;
   const firstValue = evidence ? compact(tokenUsage.summary.lifetimeTokens) : bounded(activity.summary.totalTokens, compact);
-  const secondValue = evidence ? number(analytics.totals.turns) : bounded(activity.summary.newChats);
-  const thirdValue = evidence ? number(analytics.totals.pluginCalls) : bounded(activity.summary.toolCalls);
-  const fourthValue = evidence ? number(analytics.totals.skillUses) : activity.summary.activeDays === null ? '—' : `${number(activity.summary.activeDays)} / ${activity.days.length}`;
-  const [firstLabel, secondLabel, thirdLabel, fourthLabel] = evidence ? [copy.tokens, copy.sessions, copy.tools, copy.active] : [copy.tokens, copy.sessions, copy.tools, copy.active];
+  const secondValue = bounded(activity.summary.newChats);
+  const thirdValue = bounded(activity.summary.toolCalls);
+  const fourthValue = activity.summary.activeDays === null ? '—' : `${number(activity.summary.activeDays)} / ${activity.days.length}`;
+  const [firstLabel, secondLabel, thirdLabel, fourthLabel] = [copy.tokens, copy.sessions, copy.tools, copy.active];
   const leftInsight = peakDay === null ? '—' : evidence ? `${peakDay.date.slice(5)} · ${compact(peakDay.tokens)}` : peakDay.date.slice(5);
-  const rightInsight = evidence ? `${number(tokenUsage.summary.currentStreakDays)}d / ${number(tokenUsage.summary.longestStreakDays)}d` : bounded(median, compact);
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="590" viewBox="0 0 900 590" role="img" aria-labelledby="title description">
-<title id="title">${copy.title}</title>
-<desc id="description">${copy.description} ${escapeXml(coverage)}</desc>
-<defs><style>text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;fill:#1f2328}.grid,.divider{stroke:#d0d7de}.panel{fill:#f6f8fa;fill-opacity:.02;stroke:#d0d7de}.token-bar{fill:#0969da;fill-opacity:.78}@media(prefers-color-scheme:dark){text{fill:#e6edf3}.grid,.divider{stroke:#30363d}.panel{fill:#161b22;fill-opacity:.36;stroke:#30363d}.token-bar{fill:#58a6ff;fill-opacity:.72}}</style></defs>
-<rect class="panel" x=".5" y=".5" width="899" height="589" rx="12" fill="#f6f8fa" fill-opacity=".02" stroke="#d0d7de"/>
-<text x="32" y="38" font-size="${type.title}" font-weight="600">${copy.title}</text>
-<text x="32" y="61" font-size="${type.subtitle}" opacity=".68">${copy.subtitle}</text>
-<text x="32" y="94" font-size="${type.label}" opacity=".68">${firstLabel}</text><text x="32" y="124" font-size="${type.value}" font-weight="650">${firstValue}</text>
+  const rightInsight = bounded(median, compact);
+  const height = evidence ? 410 : 590;
+  const summary = evidence
+    ? [[copy.tokens, firstValue], [copy.peak, compact(tokenUsage.summary.peakDailyTokens)], [copy.longestTurn, durationSeconds(tokenUsage.summary.longestRunningTurnSec, locale)], [copy.currentStreak, tokenUsage.summary.currentStreakDays === null ? '—' : `${number(tokenUsage.summary.currentStreakDays)}d`], [copy.longestStreak, tokenUsage.summary.longestStreakDays === null ? '—' : `${number(tokenUsage.summary.longestStreakDays)}d`]]
+      .map(([label, value], index) => `${index === 0 ? '' : `<line class="divider" x1="${185 + (index - 1) * 170}" y1="84" x2="${185 + (index - 1) * 170}" y2="132" opacity=".55"/>`}<text x="${32 + index * 170}" y="94" font-size="${type.label}" opacity=".68">${label}</text><text x="${32 + index * 170}" y="124" font-size="${type.value}" font-weight="650">${value}</text>`).join('')
+    : `<text x="32" y="94" font-size="${type.label}" opacity=".68">${firstLabel}</text><text x="32" y="124" font-size="${type.value}" font-weight="650">${firstValue}</text>
 <line class="divider" x1="227" y1="84" x2="227" y2="132" opacity=".55"/>
 <text x="249" y="94" font-size="${type.label}" opacity=".68">${secondLabel}</text><text x="249" y="124" font-size="${type.value}" font-weight="650">${secondValue}</text>
 <line class="divider" x1="444" y1="84" x2="444" y2="132" opacity=".55"/>
 <text x="466" y="94" font-size="${type.label}" opacity=".68">${thirdLabel}</text><text x="466" y="124" font-size="${type.value}" font-weight="650">${thirdValue}</text>
 <line class="divider" x1="661" y1="84" x2="661" y2="132" opacity=".55"/>
-<text x="683" y="94" font-size="${type.label}" opacity=".68">${fourthLabel}</text><text x="683" y="124" font-size="${type.value}" font-weight="650">${fourthValue}</text>
+<text x="683" y="94" font-size="${type.label}" opacity=".68">${fourthLabel}</text><text x="683" y="124" font-size="${type.value}" font-weight="650">${fourthValue}</text>`;
+  const insights = evidence ? '' : `<line class="divider" x1="32" y1="382" x2="868" y2="382" opacity=".55"/>
+<text x="32" y="414" font-size="${type.section}" font-weight="600">${copy.insights}</text>
+<text x="32" y="476" font-size="${type.label}" opacity=".68">${copy.highestDay}</text><text x="270" y="476" font-size="${type.insight}" font-weight="600">${leftInsight}</text>
+<line class="divider" x1="450" y1="430" x2="450" y2="526" opacity=".55"/>
+<text x="482" y="476" font-size="${type.label}" opacity=".68">${copy.median}</text><text x="700" y="476" font-size="${type.insight}" font-weight="600">${rightInsight}</text>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="${height}" viewBox="0 0 900 ${height}" role="img" aria-labelledby="title description">
+<title id="title">${copy.title}</title>
+<desc id="description">${copy.description} ${escapeXml(coverage)}</desc>
+<defs><style>text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;fill:#1f2328}.grid,.divider{stroke:#d0d7de}.panel{fill:#f6f8fa;fill-opacity:.02;stroke:#d0d7de}.token-bar{fill:#0969da;fill-opacity:.78}@media(prefers-color-scheme:dark){text{fill:#e6edf3}.grid,.divider{stroke:#30363d}.panel{fill:#161b22;fill-opacity:.36;stroke:#30363d}.token-bar{fill:#58a6ff;fill-opacity:.72}}</style></defs>
+<rect class="panel" x=".5" y=".5" width="899" height="${height - 1}" rx="12" fill="#f6f8fa" fill-opacity=".02" stroke="#d0d7de"/>
+<text x="32" y="38" font-size="${type.title}" font-weight="600">${copy.title}</text>
+<text x="32" y="61" font-size="${type.subtitle}" opacity=".68">${copy.subtitle}</text>
+${summary}
 <text x="32" y="174" font-size="${type.section}" font-weight="600">${copy.chart}</text>
 <text x="868" y="174" font-size="${type.meta}" text-anchor="end" opacity=".62">${escapeXml(activity.window.from)} — ${escapeXml(activity.window.to)} · ${escapeXml(coverage)}</text>
 <line class="grid" x1="64" y1="198" x2="868" y2="198" opacity=".45"/><line class="grid" x1="64" y1="262" x2="868" y2="262" opacity=".28"/><line class="grid" x1="64" y1="326" x2="868" y2="326" opacity=".65"/>
 <text x="32" y="202" font-size="${type.axis}" opacity=".58">${observedMaximum === null ? '—' : compact(observedMaximum)}</text><text x="32" y="330" font-size="${type.axis}" opacity=".58">0</text>
 ${bars}
 ${ticks}
-<line class="divider" x1="32" y1="382" x2="868" y2="382" opacity=".55"/>
-<text x="32" y="414" font-size="${type.section}" font-weight="600">${copy.insights}</text>
-<text x="32" y="476" font-size="${type.label}" opacity=".68">${copy.highestDay}</text><text x="270" y="476" font-size="${type.insight}" font-weight="600">${leftInsight}</text>
-<line class="divider" x1="450" y1="430" x2="450" y2="526" opacity=".55"/>
-<text x="482" y="476" font-size="${type.label}" opacity=".68">${copy.median}</text><text x="700" y="476" font-size="${type.insight}" font-weight="600">${rightInsight}</text>
-<text x="32" y="568" font-size="${type.footer}" opacity=".58">${copy.footer}</text>
+${insights}
+<text x="32" y="${evidence ? 392 : 568}" font-size="${type.footer}" opacity=".58">${copy.footer}</text>
 </svg>
 `;
 }
@@ -147,7 +159,7 @@ ${cells}
 export function renderActivitySvg(input, locale = 'en') {
   if (!['en', 'ko'].includes(locale)) throw new Error('unsupported locale');
   const activity = parsePublicActivity(input);
-  if ([3, 4].includes(activity.schemaVersion)) return renderSurface(activity, locale);
+  if ([3, 4, 5].includes(activity.schemaVersion)) return renderSurface(activity, locale);
   if (activity.schemaVersion === 2) return renderProfile(activity);
   const maximum = Math.max(1, ...activity.days.map((day) => day.toolCalls ?? 0));
   const bars = activity.days.map((day, index) => {

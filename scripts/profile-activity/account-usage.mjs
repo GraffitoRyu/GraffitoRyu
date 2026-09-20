@@ -39,11 +39,14 @@ export function parseAccountUsage(value) {
 }
 
 export function attachAccountActivity(localActivity, accountActivity = null) {
-  return accountActivity === null ? localActivity : parsePublicActivity({
+  if (accountActivity === null) return localActivity;
+  const parsed = parseAccountActivity(accountActivity);
+  if (parsed.schemaVersion !== 2) throw new Error('account token usage required');
+  return parsePublicActivity({
     ...localActivity,
-    schemaVersion: 4,
+    schemaVersion: 5,
     metricScope: 'codex-activity-evidence',
-    accountActivity: parseAccountActivity(accountActivity),
+    accountTokenUsage: parsed.tokenUsage,
   });
 }
 
