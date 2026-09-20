@@ -669,6 +669,9 @@ test('verified account activity uses App Server tokens and drives bilingual dash
   assert.match(korean, /계정 누적 토큰/);
   assert.match(korean, /411\.27억/);
   assert.match(korean, /최고 사용일/);
+  assert.match(korean, /font-size="22" font-weight="600">Codex 계정 활동/);
+  assert.match(korean, /font-size="14" opacity="\.68">계정 누적 토큰/);
+  assert.match(english, /font-size="20" font-weight="600">Codex account activity/);
   assert.doesNotMatch(english, /Observed tokens|Unavailable|Not observed/);
 });
 

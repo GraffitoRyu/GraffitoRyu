@@ -38,6 +38,9 @@ function duration(minutes) {
 
 function renderSurface(activity, locale) {
   const ko = locale === 'ko';
+  const type = ko
+    ? { title: 22, subtitle: 14, label: 14, value: 27, section: 16, meta: 11, axis: 10, insight: 20, footer: 12 }
+    : { title: 20, subtitle: 12, label: 12, value: 25, section: 14, meta: 10, axis: 9, insight: 18, footer: 10 };
   const evidence = activity.schemaVersion === 4;
   const copy = ko ? {
     title: evidence ? 'Codex 계정 활동' : 'Codex로 만든 30일', subtitle: evidence ? '공식 App Server 토큰 · 계정 Analytics' : '최근 30일 로컬 활동 관측', tokens: evidence ? '계정 누적 토큰' : '관측 토큰', sessions: evidence ? '계정 턴' : '관측 세션 시작', tools: evidence ? 'Plugin 호출' : '도구 호출', active: evidence ? '사용한 Skill' : '활동일', chart: evidence ? '일별 계정 토큰' : '일별 토큰 활동', insights: evidence ? '계정 토큰 인사이트' : '활동 인사이트', highestDay: evidence ? '최고 사용일' : '가장 높은 관측일', median: evidence ? '현재 / 최장 연속 활동' : '관측 일일 토큰 중앙값', footer: evidence ? '토큰은 Codex App Server 자동 수집 · Analytics 횟수는 계정 UI 확인' : '로컬 관측 · 익명 집계', outside: evidence ? '토큰 데이터 없음' : '토큰 관측 범위 밖', tokenDays: '토큰 일수', lowerBound: '+ 하한', tokenUnit: '토큰', description: evidence ? '공식 Codex App Server 토큰과 계정 Analytics 활동.' : '최근 30일의 익명 Codex 활동.',
@@ -64,7 +67,7 @@ function renderSurface(activity, locale) {
     const tokenValue = evidence ? number(day.tokens) : lowerBound ? compactLowerBound(day.tokens, locale) : compactNumber(day.tokens);
     return `<rect class="token-bar" x="${x}" y="${326 - height}" width="15" height="${height}" rx="3" fill="#2f81f7"><title>${escapeXml(day.date)}: ${tokenValue}${lowerBound ? '+' : ''} ${copy.tokenUnit}</title></rect>`;
   }).join('');
-  const ticks = [0, 7, 14, 21, 29].map((index) => `<text x="${75.5 + index * 27}" y="348" font-size="9" text-anchor="middle" opacity=".62">${chartDays[index].date.slice(5)}</text>`).join('');
+  const ticks = [0, 7, 14, 21, 29].map((index) => `<text x="${75.5 + index * 27}" y="348" font-size="${type.axis}" text-anchor="middle" opacity=".62">${chartDays[index].date.slice(5)}</text>`).join('');
   const coverage = ko
     ? `${knownTokens.length} / ${chartDays.length}일 ${copy.tokenDays}${!evidence && partial ? ` · ${copy.lowerBound}` : ''}`
     : `${knownTokens.length} / ${chartDays.length} ${copy.tokenDays}${!evidence && partial ? ` · ${copy.lowerBound}` : ''}`;
@@ -82,27 +85,27 @@ function renderSurface(activity, locale) {
 <desc id="description">${copy.description} ${escapeXml(coverage)}</desc>
 <defs><style>text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;fill:#1f2328}.grid,.divider{stroke:#d0d7de}@media(prefers-color-scheme:dark){text{fill:#e6edf3}.panel{fill:#0d1117;stroke:#30363d}.grid,.divider{stroke:#30363d}}</style></defs>
 <rect class="panel" x=".5" y=".5" width="899" height="589" rx="12" fill="#fff" stroke="#d0d7de"/>
-<text x="32" y="38" font-size="20" font-weight="600">${copy.title}</text>
-<text x="32" y="61" font-size="12" opacity=".68">${copy.subtitle}</text>
-<text x="32" y="94" font-size="12" opacity=".68">${firstLabel}</text><text x="32" y="124" font-size="25" font-weight="650">${firstValue}</text>
+<text x="32" y="38" font-size="${type.title}" font-weight="600">${copy.title}</text>
+<text x="32" y="61" font-size="${type.subtitle}" opacity=".68">${copy.subtitle}</text>
+<text x="32" y="94" font-size="${type.label}" opacity=".68">${firstLabel}</text><text x="32" y="124" font-size="${type.value}" font-weight="650">${firstValue}</text>
 <line class="divider" x1="227" y1="84" x2="227" y2="132" opacity=".55"/>
-<text x="249" y="94" font-size="12" opacity=".68">${secondLabel}</text><text x="249" y="124" font-size="25" font-weight="650">${secondValue}</text>
+<text x="249" y="94" font-size="${type.label}" opacity=".68">${secondLabel}</text><text x="249" y="124" font-size="${type.value}" font-weight="650">${secondValue}</text>
 <line class="divider" x1="444" y1="84" x2="444" y2="132" opacity=".55"/>
-<text x="466" y="94" font-size="12" opacity=".68">${thirdLabel}</text><text x="466" y="124" font-size="25" font-weight="650">${thirdValue}</text>
+<text x="466" y="94" font-size="${type.label}" opacity=".68">${thirdLabel}</text><text x="466" y="124" font-size="${type.value}" font-weight="650">${thirdValue}</text>
 <line class="divider" x1="661" y1="84" x2="661" y2="132" opacity=".55"/>
-<text x="683" y="94" font-size="12" opacity=".68">${fourthLabel}</text><text x="683" y="124" font-size="25" font-weight="650">${fourthValue}</text>
-<text x="32" y="174" font-size="14" font-weight="600">${copy.chart}</text>
-<text x="868" y="174" font-size="10" text-anchor="end" opacity=".62">${escapeXml(activity.window.from)} — ${escapeXml(activity.window.to)} · ${escapeXml(coverage)}</text>
+<text x="683" y="94" font-size="${type.label}" opacity=".68">${fourthLabel}</text><text x="683" y="124" font-size="${type.value}" font-weight="650">${fourthValue}</text>
+<text x="32" y="174" font-size="${type.section}" font-weight="600">${copy.chart}</text>
+<text x="868" y="174" font-size="${type.meta}" text-anchor="end" opacity=".62">${escapeXml(activity.window.from)} — ${escapeXml(activity.window.to)} · ${escapeXml(coverage)}</text>
 <line class="grid" x1="64" y1="198" x2="868" y2="198" opacity=".45"/><line class="grid" x1="64" y1="262" x2="868" y2="262" opacity=".28"/><line class="grid" x1="64" y1="326" x2="868" y2="326" opacity=".65"/>
-<text x="32" y="202" font-size="9" opacity=".58">${observedMaximum === null ? '—' : compact(observedMaximum)}</text><text x="32" y="330" font-size="9" opacity=".58">0</text>
+<text x="32" y="202" font-size="${type.axis}" opacity=".58">${observedMaximum === null ? '—' : compact(observedMaximum)}</text><text x="32" y="330" font-size="${type.axis}" opacity=".58">0</text>
 ${bars}
 ${ticks}
 <line class="divider" x1="32" y1="382" x2="868" y2="382" opacity=".55"/>
-<text x="32" y="414" font-size="14" font-weight="600">${copy.insights}</text>
-<text x="32" y="476" font-size="12" opacity=".68">${copy.highestDay}</text><text x="270" y="476" font-size="18" font-weight="600">${leftInsight}</text>
+<text x="32" y="414" font-size="${type.section}" font-weight="600">${copy.insights}</text>
+<text x="32" y="476" font-size="${type.label}" opacity=".68">${copy.highestDay}</text><text x="270" y="476" font-size="${type.insight}" font-weight="600">${leftInsight}</text>
 <line class="divider" x1="450" y1="430" x2="450" y2="526" opacity=".55"/>
-<text x="482" y="476" font-size="12" opacity=".68">${copy.median}</text><text x="700" y="476" font-size="18" font-weight="600">${rightInsight}</text>
-<text x="32" y="568" font-size="10" opacity=".58">${copy.footer}</text>
+<text x="482" y="476" font-size="${type.label}" opacity=".68">${copy.median}</text><text x="700" y="476" font-size="${type.insight}" font-weight="600">${rightInsight}</text>
+<text x="32" y="568" font-size="${type.footer}" opacity=".58">${copy.footer}</text>
 </svg>
 `;
 }
