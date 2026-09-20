@@ -412,6 +412,27 @@ test('v3 renderer prioritizes four reliable public metrics', () => {
   assert.equal(svg, renderActivitySvg(activity));
 });
 
+test('v3 renderer keeps the approved lower insight section', () => {
+  const activity = aggregateSnapshots([
+    makeV3Input({ sessions: 1, newChats: 1, calls: 4, tokens: 10 }),
+    makeV3Input({ sourceId: SOURCE_B, sessions: 1, newChats: 1, calls: 4, tokens: 10 }),
+  ], options);
+  activity.days[4].tokens = 99;
+
+  const svg = renderActivitySvg(activity);
+
+  assert.match(svg, /height="590" viewBox="0 0 900 590"/);
+  assert.match(svg, /Activity insights/);
+  assert.match(svg, /Consistency/);
+  assert.match(svg, /Current streak/);
+  assert.match(svg, /Longest streak/);
+  assert.match(svg, /Peak activity/);
+  assert.match(svg, /Peak day/);
+  assert.match(svg, /Peak observed tokens/);
+  assert.match(svg, />08-19<\/text>/);
+  assert.match(svg, />99<\/text>/);
+});
+
 test('v3 renderer presents verified partial observations as quiet lower bounds', () => {
   const observed = makeV3Input({ sessions: 1, newChats: 1, calls: 4, tokens: 10, maxSessionTokens: 9, longestSessionMinutes: 3 });
   const unavailable = makeV3Input({ sourceId: SOURCE_B });

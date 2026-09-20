@@ -23,6 +23,7 @@ function renderSurface(activity) {
   const bounded = (value, formatter = number) => value === null ? '—' : `${formatter(value)}${partial ? '+' : ''}`;
   const knownTokens = activity.days.flatMap((day) => day.tokens === null ? [] : [day.tokens]);
   const observedMaximum = knownTokens.length === 0 ? null : Math.max(...knownTokens);
+  const peakDay = observedMaximum === null ? null : activity.days.find((day) => day.tokens === observedMaximum) ?? null;
   const scaleMaximum = Math.max(1, observedMaximum ?? 0);
   const bars = activity.days.map((day, index) => {
     const x = 68 + index * 27;
@@ -32,14 +33,15 @@ function renderSurface(activity) {
     return `<rect class="token-bar" x="${x}" y="${326 - height}" width="15" height="${height}" rx="3" fill="#2f81f7"/><title>${escapeXml(day.date)}: ${compactNumber(day.tokens)}${lowerBound ? '+' : ''} tokens</title>`;
   }).join('');
   const ticks = [0, 7, 14, 21, 29].map((index) => `<text x="${75.5 + index * 27}" y="348" font-size="9" text-anchor="middle" opacity=".62">${activity.days[index].date.slice(5)}</text>`).join('');
+  const boundedDays = (value) => value === null ? '—' : `${number(value)}d${partial ? '+' : ''}`;
   const coverage = partial ? 'Values with a plus sign are observed lower bounds.' : activity.status === 'ready' ? 'Values cover the selected local activity window.' : 'Some local activity was not observed.';
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="390" viewBox="0 0 900 390" role="img" aria-labelledby="title description">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="590" viewBox="0 0 900 590" role="img" aria-labelledby="title description">
 <title id="title">30 days building with Codex</title>
 <desc id="description">Anonymous Codex activity over the last 30 days. ${escapeXml(coverage)}</desc>
 <defs><style>text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;fill:#1f2328}.grid,.divider{stroke:#d0d7de}@media(prefers-color-scheme:dark){text{fill:#e6edf3}.panel{fill:#0d1117;stroke:#30363d}.grid,.divider{stroke:#30363d}}</style></defs>
-<rect class="panel" x=".5" y=".5" width="899" height="389" rx="12" fill="#fff" stroke="#d0d7de"/>
+<rect class="panel" x=".5" y=".5" width="899" height="589" rx="12" fill="#fff" stroke="#d0d7de"/>
 <text x="32" y="38" font-size="20" font-weight="600">30 days building with Codex</text>
-<text x="32" y="61" font-size="12" opacity=".68">A compact view of observed local activity</text>
+<text x="32" y="61" font-size="12" opacity=".68">Observed local activity · last 30 days</text>
 <text x="32" y="94" font-size="12" opacity=".68">Observed tokens</text><text x="32" y="124" font-size="25" font-weight="650">${bounded(activity.summary.totalTokens, compactNumber)}</text>
 <line class="divider" x1="227" y1="84" x2="227" y2="132" opacity=".55"/>
 <text x="249" y="94" font-size="12" opacity=".68">New chats</text><text x="249" y="124" font-size="25" font-weight="650">${bounded(activity.summary.newChats)}</text>
@@ -48,12 +50,21 @@ function renderSurface(activity) {
 <line class="divider" x1="661" y1="84" x2="661" y2="132" opacity=".55"/>
 <text x="683" y="94" font-size="12" opacity=".68">Active days</text><text x="683" y="124" font-size="25" font-weight="650">${activity.summary.activeDays === null ? '—' : `${number(activity.summary.activeDays)}d${partial ? '+' : ''}`}</text>
 <text x="32" y="174" font-size="14" font-weight="600">Daily token activity</text>
-<text x="700" y="174" font-size="10" opacity=".62">${escapeXml(activity.window.from)} — ${escapeXml(activity.window.to)}</text>
+<text x="680" y="174" font-size="10" opacity=".62">${escapeXml(activity.window.from)} — ${escapeXml(activity.window.to)}</text>
 <line class="grid" x1="64" y1="198" x2="868" y2="198" opacity=".45"/><line class="grid" x1="64" y1="262" x2="868" y2="262" opacity=".28"/><line class="grid" x1="64" y1="326" x2="868" y2="326" opacity=".65"/>
 <text x="32" y="202" font-size="9" opacity=".58">${observedMaximum === null ? '—' : compactNumber(observedMaximum)}</text><text x="32" y="330" font-size="9" opacity=".58">0</text>
 ${bars}
 ${ticks}
-<text x="32" y="375" font-size="10" opacity=".58">Observed locally · anonymous aggregate</text>
+<line class="divider" x1="32" y1="382" x2="868" y2="382" opacity=".55"/>
+<text x="32" y="414" font-size="14" font-weight="600">Activity insights</text>
+<text x="32" y="446" font-size="12" font-weight="600" opacity=".82">Consistency</text>
+<text x="32" y="476" font-size="12" opacity=".68">Current streak</text><text x="350" y="476" font-size="18" font-weight="600">${boundedDays(activity.summary.currentStreakDays)}</text>
+<text x="32" y="518" font-size="12" opacity=".68">Longest streak</text><text x="350" y="518" font-size="18" font-weight="600">${boundedDays(activity.summary.longestStreakDays)}</text>
+<line class="divider" x1="450" y1="430" x2="450" y2="526" opacity=".55"/>
+<text x="482" y="446" font-size="12" font-weight="600" opacity=".82">Peak activity</text>
+<text x="482" y="476" font-size="12" opacity=".68">Peak day</text><text x="760" y="476" font-size="18" font-weight="600">${peakDay === null ? '—' : peakDay.date.slice(5)}</text>
+<text x="482" y="518" font-size="12" opacity=".68">Peak observed tokens</text><text x="760" y="518" font-size="18" font-weight="600">${bounded(observedMaximum, compactNumber)}</text>
+<text x="32" y="568" font-size="10" opacity=".58">Observed locally · anonymous aggregate</text>
 </svg>
 `;
 }
