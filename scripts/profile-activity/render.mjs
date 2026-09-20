@@ -83,8 +83,8 @@ function renderSurface(activity, locale) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="590" viewBox="0 0 900 590" role="img" aria-labelledby="title description">
 <title id="title">${copy.title}</title>
 <desc id="description">${copy.description} ${escapeXml(coverage)}</desc>
-<defs><style>text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;fill:#1f2328}.grid,.divider{stroke:#d0d7de}.panel{fill:#0d1117;fill-opacity:.02;stroke:#d0d7de}@media(prefers-color-scheme:dark){text{fill:#e6edf3}.grid,.divider{stroke:#30363d}.panel{fill-opacity:.36;stroke:#30363d}}</style></defs>
-<rect class="panel" x=".5" y=".5" width="899" height="589" rx="12" fill="#0d1117" fill-opacity=".02" stroke="#d0d7de"/>
+<defs><style>text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;fill:#1f2328}.grid,.divider{stroke:#d0d7de}.panel{fill:#f6f8fa;fill-opacity:.02;stroke:#d0d7de}.token-bar{fill:#0969da;fill-opacity:.78}@media(prefers-color-scheme:dark){text{fill:#e6edf3}.grid,.divider{stroke:#30363d}.panel{fill:#161b22;fill-opacity:.36;stroke:#30363d}.token-bar{fill:#58a6ff;fill-opacity:.72}}</style></defs>
+<rect class="panel" x=".5" y=".5" width="899" height="589" rx="12" fill="#f6f8fa" fill-opacity=".02" stroke="#d0d7de"/>
 <text x="32" y="38" font-size="${type.title}" font-weight="600">${copy.title}</text>
 <text x="32" y="61" font-size="${type.subtitle}" opacity=".68">${copy.subtitle}</text>
 <text x="32" y="94" font-size="${type.label}" opacity=".68">${firstLabel}</text><text x="32" y="124" font-size="${type.value}" font-weight="650">${firstValue}</text>
