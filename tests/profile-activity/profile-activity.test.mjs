@@ -1430,6 +1430,52 @@ test('T41 installer uses the approved commit bytes instead of dirty source', asy
   assert.equal(reinstalled.status, 'runtime-installed');
 });
 
+test('T72 publisher runtime replacement validates before swapping the installed receipt', async () => {
+  const root = await temp();
+  const source = path.join(root, 'source');
+  const sourceScripts = path.join(source, 'scripts', 'profile-activity');
+  await mkdir(path.dirname(sourceScripts), { recursive: true });
+  await cp(path.resolve('scripts/profile-activity'), sourceScripts, { recursive: true });
+  await run('git', ['init', '--initial-branch=main', source]);
+  await run('git', ['-C', source, 'config', 'user.name', 'Synthetic Test']);
+  await run('git', ['-C', source, 'config', 'user.email', 'test@example.invalid']);
+  const hooks = path.join(root, 'hooks');
+  await mkdir(hooks);
+  await run('git', ['-C', source, 'config', 'core.hooksPath', hooks]);
+  await run('git', ['-C', source, 'add', 'scripts/profile-activity']);
+  await run('git', ['-C', source, 'commit', '-m', 'first runtime']);
+  const firstCommit = (await run('git', ['-C', source, 'rev-parse', 'HEAD'])).stdout.trim();
+  const renderFile = path.join(sourceScripts, 'render.mjs');
+  await appendFile(renderFile, '\n// second runtime\n');
+  await run('git', ['-C', source, 'add', 'scripts/profile-activity/render.mjs']);
+  await run('git', ['-C', source, 'commit', '-m', 'second runtime']);
+  const secondCommit = (await run('git', ['-C', source, 'rev-parse', 'HEAD'])).stdout.trim();
+  const stateDir = path.join(root, 'state');
+  const runtimeRoot = path.join(root, 'runtime');
+  const configFile = path.join(root, 'config.json');
+  await writeFile(configFile, stableJson({
+    schemaVersion: 1, role: 'publisher', sourceId: SOURCE_A, policyId: 'local-codex-v1-kst-exclude-profile',
+    codexHome: root, logRoots: [root], stateDir, transportDir: null, runtimeDir: runtimeRoot, runtimeManifest: {},
+    excludedRepoRoots: [], expectedSources: [], independentSources: true, publicDays: 30, retentionDays: 90,
+    staleAfterHours: 48, timezone: 'Asia/Seoul',
+    publisher: { repoDir: source, remote: 'synthetic', branch: 'main', candidateRoot: path.join(root, 'candidates'), retryLimit: 0, hooksPath: hooks, collectionPath: 'metrics/codex-activity-macmini.json' },
+  }));
+  const installer = path.join(sourceScripts, 'install-local.mjs');
+  await run(process.execPath, [installer, '--apply', '--config', configFile, '--source-commit', firstCommit]);
+  const installedConfig = path.join(stateDir, 'installed-config.json');
+  const before = await readFile(installedConfig, 'utf8');
+  await assert.rejects(run(process.execPath, [installer, '--replace', '--config', installedConfig, '--source-commit', '0'.repeat(40)]));
+  assert.equal(await readFile(installedConfig, 'utf8'), before);
+
+  const result = JSON.parse((await run(process.execPath, [installer, '--replace', '--config', installedConfig, '--source-commit', secondCommit])).stdout);
+  const replacedConfig = JSON.parse(await readFile(installedConfig, 'utf8'));
+  const receipt = JSON.parse(await readFile(path.join(stateDir, 'installation-receipt.json'), 'utf8'));
+  assert.equal(result.status, 'runtime-replaced');
+  assert.equal(receipt.sourceCommit, secondCommit);
+  assert.equal(replacedConfig.runtimeDir, receipt.runtimeDir);
+  assert.match(await readFile(path.join(replacedConfig.runtimeDir, 'render.mjs'), 'utf8'), /second runtime/);
+});
+
 test('T36 an existing installation target is not overwritten', async () => {
   const root = await temp();
   await mkdir(path.join(root, 'owned'), { mode: 0o700 });

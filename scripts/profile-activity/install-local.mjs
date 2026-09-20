@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { lstat, mkdir, readFile, readdir, realpath, rmdir, unlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, readdir, realpath, rename, rmdir, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -71,6 +71,29 @@ async function exists(file) {
   try { await lstat(file); return true; } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
 }
 
+async function validateInstallation(config, configFile) {
+  const installedConfigFile = path.join(config.stateDir, 'installed-config.json');
+  const receiptFile = path.join(config.stateDir, 'installation-receipt.json');
+  if (path.resolve(configFile) !== installedConfigFile) throw new Error('installed config required');
+  const installedConfig = await readFile(installedConfigFile, 'utf8');
+  const receipt = JSON.parse(await readFile(receiptFile, 'utf8'));
+  const runtimeManifestDigest = digestManifest(config.runtimeManifest);
+  if (receipt.schemaVersion !== 1 || receipt.role !== config.role || receipt.stateDir !== config.stateDir || receipt.runtimeDir !== config.runtimeDir || receipt.runtimeDigest !== path.basename(config.runtimeDir) || receipt.runtimeDigest !== runtimeManifestDigest || receipt.runtimeManifestDigest !== runtimeManifestDigest || receipt.installedConfigDigest !== createHash('sha256').update(installedConfig).digest('hex') || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(receipt.sourceCommit)) throw new Error('installation receipt mismatch');
+  await verifyRuntimeManifest(config.runtimeDir, config.runtimeManifest);
+  return { installedConfig, installedConfigFile, receipt, receiptFile };
+}
+
+async function removeRuntime(config) {
+  const ownedRuntimeFiles = new Set([...Object.keys(config.runtimeManifest), 'manifest.json']);
+  const runtimeEntries = await readdir(config.runtimeDir);
+  if (runtimeEntries.length !== ownedRuntimeFiles.size || runtimeEntries.some((name) => !ownedRuntimeFiles.has(name))) throw new Error('runtime contains unmanaged files');
+  const installedManifest = JSON.parse(await readFile(path.join(config.runtimeDir, 'manifest.json'), 'utf8'));
+  if (stableJson(installedManifest) !== stableJson(config.runtimeManifest)) throw new Error('installed manifest mismatch');
+  for (const name of Object.keys(config.runtimeManifest)) await unlink(path.join(config.runtimeDir, name));
+  await unlink(path.join(config.runtimeDir, 'manifest.json'));
+  await rmdir(config.runtimeDir);
+}
+
 async function main() {
   const args = process.argv.slice(2);
   if (args[0] === '--plan') {
@@ -91,17 +114,12 @@ async function main() {
     }));
     return;
   }
-  if (!['--apply', '--remove'].includes(args[0]) || args[1] !== '--config' || !args[2]) throw new Error('usage');
+  if (!['--apply', '--remove', '--replace'].includes(args[0]) || args[1] !== '--config' || !args[2]) throw new Error('usage');
   const config = await readConfig(args[2]);
   const installedConfigFile = path.join(config.stateDir, 'installed-config.json');
   const receiptFile = path.join(config.stateDir, 'installation-receipt.json');
   if (args[0] === '--remove') {
-    if (path.resolve(args[2]) !== installedConfigFile) throw new Error('installed config required');
-    const installedConfig = await readFile(installedConfigFile, 'utf8');
-    const receipt = JSON.parse(await readFile(receiptFile, 'utf8'));
-    const runtimeManifestDigest = digestManifest(config.runtimeManifest);
-    if (receipt.schemaVersion !== 1 || receipt.role !== config.role || receipt.stateDir !== config.stateDir || receipt.runtimeDir !== config.runtimeDir || receipt.runtimeDigest !== path.basename(config.runtimeDir) || receipt.runtimeDigest !== runtimeManifestDigest || receipt.runtimeManifestDigest !== runtimeManifestDigest || receipt.installedConfigDigest !== createHash('sha256').update(installedConfig).digest('hex') || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(receipt.sourceCommit)) throw new Error('installation receipt mismatch');
-    await verifyRuntimeManifest(config.runtimeDir, config.runtimeManifest);
+    const { receipt } = await validateInstallation(config, args[2]);
     if (config.role === 'collector' && config.launchAgent) {
       await run('/bin/launchctl', ['bootout', `gui/${process.getuid()}/${config.launchAgent.label}`]).catch(() => {});
       if (await exists(config.launchAgent.plistFile)) {
@@ -110,14 +128,7 @@ async function main() {
         await unlink(config.launchAgent.plistFile);
       }
     }
-    const ownedRuntimeFiles = new Set([...Object.keys(config.runtimeManifest), 'manifest.json']);
-    const runtimeEntries = await readdir(config.runtimeDir);
-    if (runtimeEntries.length !== ownedRuntimeFiles.size || runtimeEntries.some((name) => !ownedRuntimeFiles.has(name))) throw new Error('runtime contains unmanaged files');
-    const installedManifest = JSON.parse(await readFile(path.join(config.runtimeDir, 'manifest.json'), 'utf8'));
-    if (stableJson(installedManifest) !== stableJson(config.runtimeManifest)) throw new Error('installed manifest mismatch');
-    for (const name of Object.keys(config.runtimeManifest)) await unlink(path.join(config.runtimeDir, name));
-    await unlink(path.join(config.runtimeDir, 'manifest.json'));
-    await rmdir(config.runtimeDir);
+    await removeRuntime(config);
     await unlink(installedConfigFile);
     await unlink(receiptFile);
     process.stdout.write(stableJson({ status: 'runtime-removed', registration: 'removed' }));
@@ -128,6 +139,49 @@ async function main() {
   const sourcePackage = await committedSourcePackage(args[commitIndex + 1]);
   const { files, manifest, sourceCommit } = sourcePackage;
   const digest = digestManifest(manifest);
+  if (args[0] === '--replace') {
+    if (config.role !== 'publisher' || config.launchAgent) throw new Error('publisher replacement required');
+    const current = await validateInstallation(config, args[2]);
+    const target = path.join(path.dirname(config.runtimeDir), digest);
+    if (target === config.runtimeDir || await exists(target)) throw new Error('replacement target exists');
+    const gitBinary = (await run('/usr/bin/which', ['git'], { encoding: 'utf8' })).stdout.trim();
+    const hooksPath = (await run('git', ['-C', config.publisher.repoDir, 'config', '--get', 'core.hooksPath'], { encoding: 'utf8' }).catch(() => ({ stdout: '' }))).stdout.trim();
+    if ((config.publisher.hooksPath ?? '') !== hooksPath) throw new Error('Git hooks changed');
+    const publisher = { ...config.publisher, hooksManifest: await capturePublisherHooks(config.publisher.repoDir) };
+    const configTemp = `${current.installedConfigFile}.${process.pid}.tmp`;
+    const receiptTemp = `${current.receiptFile}.${process.pid}.tmp`;
+    await mkdir(target, { recursive: false, mode: 0o700 });
+    try {
+      for (const name of Object.keys(manifest)) await writeFile(path.join(target, name), files[name], { flag: 'wx', mode: 0o600 });
+      await writeFile(path.join(target, 'manifest.json'), stableJson(manifest), { flag: 'wx', mode: 0o600 });
+      await verifyRuntimeManifest(target, manifest);
+      const installedConfig = stableJson({ ...config, publisher, runtimeDir: target, runtimeManifest: manifest });
+      const receipt = stableJson({ schemaVersion: 1, role: config.role, sourceCommit, stateDir: config.stateDir, runtimeDir: target, runtimeDigest: digest, runtimeManifestDigest: digestManifest(manifest), installedConfigDigest: createHash('sha256').update(installedConfig).digest('hex'), nodeBinary: process.execPath, gitBinary, launchAgentLabel: null, launchAgentDigest: null, registration: 'not-created' });
+      await writeFile(configTemp, installedConfig, { flag: 'wx', mode: 0o600 });
+      await writeFile(receiptTemp, receipt, { flag: 'wx', mode: 0o600 });
+      try {
+        await rename(configTemp, current.installedConfigFile);
+        await rename(receiptTemp, current.receiptFile);
+      } catch (error) {
+        await writeFile(current.installedConfigFile, current.installedConfig, { mode: 0o600 });
+        await writeFile(current.receiptFile, stableJson(current.receipt), { mode: 0o600 });
+        await unlink(configTemp).catch(() => {});
+        await unlink(receiptTemp).catch(() => {});
+        throw error;
+      }
+    } catch (error) {
+      await unlink(configTemp).catch(() => {});
+      await unlink(receiptTemp).catch(() => {});
+      const entries = await readdir(target).catch(() => []);
+      for (const name of entries) await unlink(path.join(target, name)).catch(() => {});
+      await rmdir(target).catch(() => {});
+      throw error;
+    }
+    let cleanup = 'complete';
+    try { await removeRuntime(config); } catch { cleanup = 'pending'; }
+    process.stdout.write(stableJson({ status: 'runtime-replaced', registration: 'not-created', cleanup }));
+    return;
+  }
   if (config.role === 'collector' && !config.launchAgent) throw new Error('collector launchAgent required');
   const target = path.join(config.runtimeDir, digest);
   if (await exists(target) || await exists(installedConfigFile) || await exists(receiptFile) || (config.launchAgent && await exists(config.launchAgent.plistFile))) throw new Error('existing installation refused');
