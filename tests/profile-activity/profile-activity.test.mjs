@@ -519,9 +519,9 @@ test('v3 renderer draws a bounded 30-day token histogram with readable axes', ()
   assert.match(svg, />9T<\/text>/);
   assert.match(svg, />08-15<\/text>/);
   assert.match(svg, />09-13<\/text>/);
-  assert.match(svg, /@media\(prefers-color-scheme:dark\)/);
-  assert.match(svg, /\.grid,\.divider\{stroke:#d0d7de\}.*\.grid,\.divider\{stroke:#30363d\}/);
-  assert.match(svg, /class="panel"[^>]+fill="#fff"/);
+  assert.doesNotMatch(svg, /prefers-color-scheme/);
+  assert.match(svg, /\.grid,\.divider\{stroke:#30363d\}/);
+  assert.match(svg, /class="panel"[^>]+fill="#0d1117" fill-opacity="\.96" stroke="#30363d"/);
 });
 
 test('v3 renderer distinguishes unknown, zero, partial, and ready token bars', () => {
@@ -672,6 +672,8 @@ test('verified account activity uses App Server tokens and drives bilingual dash
   assert.match(korean, /font-size="22" font-weight="600">Codex 계정 활동/);
   assert.match(korean, /font-size="14" opacity="\.68">계정 누적 토큰/);
   assert.match(english, /font-size="20" font-weight="600">Codex account activity/);
+  assert.match(english, /fill="#0d1117" fill-opacity="\.96"/);
+  assert.match(korean, /fill="#0d1117" fill-opacity="\.96"/);
   assert.doesNotMatch(english, /Observed tokens|Unavailable|Not observed/);
 });
 
