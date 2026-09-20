@@ -138,7 +138,7 @@ test('owned collection publish merges the current pair into deterministic final 
   const final = JSON.parse(await remoteFile(fixture.remote, 'metrics/codex-activity.json'));
   assert.equal(final.schemaVersion, 3);
   assert.equal(final.aggregation, 'sum');
-  assert.match(await remoteFile(fixture.remote, 'assets/codex-activity.svg'), /Codex activity silhouette/);
+  assert.match(await remoteFile(fixture.remote, 'assets/codex-activity.svg'), /30 days building with Codex/);
 });
 
 test('non-fast-forward retry rereads the peer collection before generating final files', async () => {

@@ -396,26 +396,23 @@ test('v3 aggregate refuses a non-independent two-device surface', () => {
   ], { ...options, independentSources: false }), /independent sources required/);
 });
 
-test('v3 renderer shows only anonymous fixed activity categories', () => {
+test('v3 renderer prioritizes four reliable public metrics', () => {
   const activity = aggregateSnapshots([
     makeV3Input({ sessions: 1, newChats: 1, calls: 4, pluginCalls: 1, browserCalls: 1, computerUseCalls: 1, skillUses: 1, fastTurns: 1, modeTurns: 2, reasoning: { none: 0, low: 1, medium: 0, high: 1, xhigh: 0, other: 0 } }),
     makeV3Input({ sourceId: SOURCE_B, sessions: 1, newChats: 1, calls: 4, pluginCalls: 1, browserCalls: 1, computerUseCalls: 1, skillUses: 1, fastTurns: 1, modeTurns: 2, reasoning: { none: 0, low: 1, medium: 0, high: 1, xhigh: 0, other: 0 } }),
   ], options);
   const svg = renderActivitySvg(activity);
+  assert.match(svg, /30 days building with Codex/);
+  assert.match(svg, /Observed tokens/);
   assert.match(svg, /New chats/);
-  assert.match(svg, /Plugin calls/);
-  assert.match(svg, /Browser\/web/);
-  assert.match(svg, /Computer use/);
-  assert.match(svg, /Other tools/);
-  assert.match(svg, /Skill uses/);
-  assert.match(svg, /Fast mode/);
-  assert.match(svg, /Reasoning/);
-  assert.match(svg, /none · low · medium · high · xhigh · other/);
+  assert.match(svg, /Tool calls/);
+  assert.match(svg, /Active days/);
+  assert.doesNotMatch(svg, /Max session|Longest chat|Session-days|Plugin calls|Browser\/web|Computer use|Other tools|Skill uses|Fast mode|Reasoning|Not observed|Unavailable/);
   assert.doesNotMatch(svg, /11111111|22222222|PRIVATE|device|source|<script|foreignObject|(?:href|src)=|on[a-z]+=/i);
   assert.equal(svg, renderActivitySvg(activity));
 });
 
-test('v3 renderer labels verified partial observations as lower bounds', () => {
+test('v3 renderer presents verified partial observations as quiet lower bounds', () => {
   const observed = makeV3Input({ sessions: 1, newChats: 1, calls: 4, tokens: 10, maxSessionTokens: 9, longestSessionMinutes: 3 });
   const unavailable = makeV3Input({ sourceId: SOURCE_B });
   unavailable.snapshot.days = unavailable.snapshot.days.map((day) => Object.fromEntries(
@@ -423,30 +420,21 @@ test('v3 renderer labels verified partial observations as lower bounds', () => {
   ));
   const svg = renderActivitySvg(aggregateSnapshots([observed, unavailable], options));
 
-  assert.match(svg, />≥300</);
-  assert.match(svg, />≥120</);
-  assert.match(svg, /≥10 tokens \(partial\)/);
-  assert.match(svg, /Not observed/);
+  assert.match(svg, />300\+</);
+  assert.match(svg, />120\+</);
+  assert.match(svg, />30d\+</);
+  assert.match(svg, /10\+ tokens/);
+  assert.doesNotMatch(svg, /≥|Partial values shown|Not observed|Unavailable/);
 
   const complete = renderActivitySvg(aggregateSnapshots([
     makeV3Input({ sessions: 1, calls: 1, tokens: 1, skillUses: 0 }),
     makeV3Input({ sourceId: SOURCE_B, sessions: 1, calls: 1, tokens: 1, skillUses: 0 }),
   ], options));
-  assert.doesNotMatch(complete, /≥/);
+  assert.match(complete, /Observed tokens<\/text><text[^>]+>60<\/text>/);
+  assert.doesNotMatch(complete, />60\+</);
 });
 
-test('v3 renderer labels absent optional telemetry as not observed', () => {
-  const svg = renderActivitySvg(aggregateSnapshots([
-    makeV3Input({ sessions: 1, calls: 1, tokens: 1 }),
-    makeV3Input({ sourceId: SOURCE_B, sessions: 1, calls: 1, tokens: 1 }),
-  ], options));
-
-  assert.match(svg, /Skill uses<\/text><text[^>]+>Not observed<\/text>/);
-  assert.match(svg, /Fast mode<\/text><text[^>]+>Not observed<\/text>/);
-  assert.match(svg, /Reasoning[\s\S]+Not observed/);
-});
-
-test('v3 renderer draws a bounded 30-day token histogram with readable axes and callouts', () => {
+test('v3 renderer draws a bounded 30-day token histogram with readable axes', () => {
   const complete = { sessions: 1, calls: 1, tokens: 10, skillUses: 0, fastTurns: 0, modeTurns: 0, reasoning: { none: 0, low: 0, medium: 0, high: 0, xhigh: 0, other: 0 } };
   const activity = aggregateSnapshots([
     makeV3Input(complete),
@@ -462,15 +450,12 @@ test('v3 renderer draws a bounded 30-day token histogram with readable axes and 
   assert.equal(bars.length, 30);
   assert.match(svg, /class="token-bar" x="68"/);
   assert.match(svg, /class="token-bar" x="851"/);
-  assert.match(svg, /y="234" width="15" height="2"/);
+  assert.match(svg, /y="324" width="15" height="2"/);
   assert.match(svg, />9T<\/text>/);
-  assert.match(svg, />Max 9T<\/text>/);
-  assert.match(svg, />Latest 50<\/text>/);
   assert.match(svg, />08-15<\/text>/);
   assert.match(svg, />09-13<\/text>/);
-  assert.match(svg, /text-anchor="end"/);
   assert.match(svg, /@media\(prefers-color-scheme:dark\)/);
-  assert.match(svg, /\.grid\{stroke:#d0d7de\}.*\.grid\{stroke:#30363d\}/);
+  assert.match(svg, /\.grid,\.divider\{stroke:#d0d7de\}.*\.grid,\.divider\{stroke:#30363d\}/);
   assert.match(svg, /class="panel"[^>]+fill="#fff"/);
 });
 
@@ -489,9 +474,8 @@ test('v3 renderer distinguishes unknown, zero, partial, and ready token bars', (
 
   const partialSvg = renderActivitySvg(partial);
   assert.match(partialSvg, /class="token-bar token-unknown"/);
-  assert.match(partialSvg, /Partial values shown as ≥/);
-  assert.match(partialSvg, />Max ≥10<\/text>/);
-  assert.match(partialSvg, />Latest ≥10<\/text>/);
+  assert.match(partialSvg, /10\+ tokens/);
+  assert.doesNotMatch(partialSvg, /Partial values shown|≥/);
 
   const unavailableSurface = structuredClone(partial);
   unavailableSurface.status = 'unavailable';
@@ -500,14 +484,14 @@ test('v3 renderer distinguishes unknown, zero, partial, and ready token bars', (
     key === 'date' ? day.date : key === 'coverage' ? 'unknown' : null,
   ])));
   const unavailableSvg = renderActivitySvg(unavailableSurface);
-  assert.match(unavailableSvg, />Max Unavailable<\/text>/);
-  assert.match(unavailableSvg, />Latest Unavailable<\/text>/);
+  assert.match(unavailableSvg, />—<\/text>/);
+  assert.doesNotMatch(unavailableSvg, />Unavailable<\/text>|>Not observed<\/text>/);
 
   const readySvg = renderActivitySvg(aggregateSnapshots([
     makeV3Input({ sessions: 1, calls: 1, tokens: 1, skillUses: 0, fastTurns: 0, modeTurns: 0, reasoning: { none: 0, low: 0, medium: 0, high: 0, xhigh: 0, other: 0 } }),
     makeV3Input({ sourceId: SOURCE_B, sessions: 1, calls: 1, tokens: 1, skillUses: 0, fastTurns: 0, modeTurns: 0, reasoning: { none: 0, low: 0, medium: 0, high: 0, xhigh: 0, other: 0 } }),
   ], options));
-  assert.doesNotMatch(readySvg, /Partial values shown|≥/);
+  assert.doesNotMatch(readySvg, /Partial values shown|≥|\+ tokens/);
 });
 
 test('account usage accepts only the exact sanitized private contract and joins once after device merge', async () => {
