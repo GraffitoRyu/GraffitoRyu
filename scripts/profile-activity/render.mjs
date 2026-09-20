@@ -31,10 +31,11 @@ function duration(minutes) {
 
 function renderSurface(activity, locale) {
   const ko = locale === 'ko';
+  const evidence = activity.schemaVersion === 4;
   const copy = ko ? {
-    title: 'Codex로 만든 30일', subtitle: '최근 30일 로컬 활동 관측', tokens: '관측 토큰', sessions: '관측 세션 시작', tools: '도구 호출', active: '활동일', chart: '일별 토큰 활동', insights: '활동 인사이트', highestDay: '가장 높은 관측일', median: '관측 일일 토큰 중앙값', footer: '로컬 관측 · 익명 집계', outside: '토큰 관측 범위 밖', tokenDays: '토큰 관측', lowerBound: '+ 하한', tokenUnit: '토큰', description: '최근 30일의 익명 Codex 활동.',
+    title: evidence ? 'Codex 활동 근거' : 'Codex로 만든 30일', subtitle: evidence ? '계정 Analytics 스냅샷 · 최근 30일 로컬 토큰 하한' : '최근 30일 로컬 활동 관측', tokens: evidence ? '로컬 토큰 하한' : '관측 토큰', sessions: evidence ? '계정 턴' : '관측 세션 시작', tools: evidence ? 'Plugin 호출' : '도구 호출', active: evidence ? '사용한 Skill' : '활동일', chart: evidence ? '일별 로컬 토큰 하한' : '일별 토큰 활동', insights: evidence ? '같은 날의 별도 근거' : '활동 인사이트', highestDay: evidence ? '프로필 토큰 표시' : '가장 높은 관측일', median: evidence ? '로컬 관측 하한' : '관측 일일 토큰 중앙값', footer: evidence ? '계정 Analytics와 로컬 텔레메트리 · 정의 미검증으로 미병합' : '로컬 관측 · 익명 집계', outside: '토큰 관측 범위 밖', tokenDays: '토큰 관측', lowerBound: '+ 하한', tokenUnit: '토큰', description: evidence ? '계정 Analytics와 로컬 Codex 텔레메트리를 분리해 표시한 활동 근거.' : '최근 30일의 익명 Codex 활동.',
   } : {
-    title: '30 days building with Codex', subtitle: 'Observed local activity · last 30 days', tokens: 'Observed tokens', sessions: 'Observed session starts', tools: 'Tool calls', active: 'Active days', chart: 'Daily token activity', insights: 'Activity insights', highestDay: 'Highest observed day', median: 'Median observed daily tokens', footer: 'Observed locally · anonymous aggregate', outside: 'outside token coverage', tokenDays: 'token days', lowerBound: '+ lower bound', tokenUnit: 'tokens', description: 'Anonymous Codex activity over the last 30 days.',
+    title: evidence ? 'Codex activity evidence' : '30 days building with Codex', subtitle: evidence ? 'Account Analytics snapshot · local 30-day token floor' : 'Observed local activity · last 30 days', tokens: evidence ? 'Local token floor' : 'Observed tokens', sessions: evidence ? 'Account turns' : 'Observed session starts', tools: evidence ? 'Plugin calls' : 'Tool calls', active: evidence ? 'Skills used' : 'Active days', chart: evidence ? 'Daily local token floor' : 'Daily token activity', insights: evidence ? 'Separate evidence · same day' : 'Activity insights', highestDay: evidence ? 'Profile token display' : 'Highest observed day', median: evidence ? 'Local observed floor' : 'Median observed daily tokens', footer: evidence ? 'Account Analytics + local telemetry · not merged without matching definitions' : 'Observed locally · anonymous aggregate', outside: 'outside token coverage', tokenDays: 'token days', lowerBound: '+ lower bound', tokenUnit: 'tokens', description: evidence ? 'Account Analytics and local Codex telemetry shown as separate activity evidence.' : 'Anonymous Codex activity over the last 30 days.',
   };
   const partial = activity.status === 'partial';
   const bounded = (value, formatter = number) => value === null ? '—' : `${formatter(value)}${partial ? '+' : ''}`;
@@ -58,6 +59,17 @@ function renderSurface(activity, locale) {
     ? `${knownTokens.length} / ${activity.days.length}일 ${copy.tokenDays}${partial ? ` · ${copy.lowerBound}` : ''}`
     : `${knownTokens.length} / ${activity.days.length} ${copy.tokenDays}${partial ? ` · ${copy.lowerBound}` : ''}`;
   const compact = (value) => compactLowerBound(value, locale);
+  const analytics = evidence ? activity.accountActivity.analytics : null;
+  const profileDay = evidence ? activity.accountActivity.profile.tokenDay : null;
+  const localProfileDay = profileDay === null ? null : activity.days.find((day) => day.date === profileDay.date) ?? null;
+  const profileValue = profileDay === null ? '—' : ko ? `${profileDay.displayValue.toLocaleString('ko-KR')}억` : `${(profileDay.displayValue / 10).toLocaleString('en-US', { maximumFractionDigits: 2 })}B`;
+  const firstValue = evidence ? number(analytics.totals.turns) : bounded(activity.summary.totalTokens, compact);
+  const secondValue = evidence ? number(analytics.totals.pluginCalls) : bounded(activity.summary.newChats);
+  const thirdValue = evidence ? number(analytics.totals.skillUses) : bounded(activity.summary.toolCalls);
+  const fourthValue = evidence ? bounded(activity.summary.totalTokens, compact) : activity.summary.activeDays === null ? '—' : `${number(activity.summary.activeDays)} / ${activity.days.length}`;
+  const [firstLabel, secondLabel, thirdLabel, fourthLabel] = evidence ? [copy.sessions, copy.tools, copy.active, copy.tokens] : [copy.tokens, copy.sessions, copy.tools, copy.active];
+  const leftInsight = evidence ? `${profileDay.date.slice(5)} · ${profileValue}` : peakDay === null ? '—' : peakDay.date.slice(5);
+  const rightInsight = evidence ? localProfileDay?.tokens === null || localProfileDay === null ? '—' : `${localProfileDay.date.slice(5)} · ${bounded(localProfileDay.tokens, compact)}` : bounded(median, compact);
   return `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="590" viewBox="0 0 900 590" role="img" aria-labelledby="title description">
 <title id="title">${copy.title}</title>
 <desc id="description">${copy.description} ${escapeXml(coverage)}</desc>
@@ -65,13 +77,13 @@ function renderSurface(activity, locale) {
 <rect class="panel" x=".5" y=".5" width="899" height="589" rx="12" fill="#fff" stroke="#d0d7de"/>
 <text x="32" y="38" font-size="20" font-weight="600">${copy.title}</text>
 <text x="32" y="61" font-size="12" opacity=".68">${copy.subtitle}</text>
-<text x="32" y="94" font-size="12" opacity=".68">${copy.tokens}</text><text x="32" y="124" font-size="25" font-weight="650">${bounded(activity.summary.totalTokens, compact)}</text>
+<text x="32" y="94" font-size="12" opacity=".68">${firstLabel}</text><text x="32" y="124" font-size="25" font-weight="650">${firstValue}</text>
 <line class="divider" x1="227" y1="84" x2="227" y2="132" opacity=".55"/>
-<text x="249" y="94" font-size="12" opacity=".68">${copy.sessions}</text><text x="249" y="124" font-size="25" font-weight="650">${bounded(activity.summary.newChats)}</text>
+<text x="249" y="94" font-size="12" opacity=".68">${secondLabel}</text><text x="249" y="124" font-size="25" font-weight="650">${secondValue}</text>
 <line class="divider" x1="444" y1="84" x2="444" y2="132" opacity=".55"/>
-<text x="466" y="94" font-size="12" opacity=".68">${copy.tools}</text><text x="466" y="124" font-size="25" font-weight="650">${bounded(activity.summary.toolCalls)}</text>
+<text x="466" y="94" font-size="12" opacity=".68">${thirdLabel}</text><text x="466" y="124" font-size="25" font-weight="650">${thirdValue}</text>
 <line class="divider" x1="661" y1="84" x2="661" y2="132" opacity=".55"/>
-<text x="683" y="94" font-size="12" opacity=".68">${copy.active}</text><text x="683" y="124" font-size="25" font-weight="650">${activity.summary.activeDays === null ? '—' : `${number(activity.summary.activeDays)} / ${activity.days.length}`}</text>
+<text x="683" y="94" font-size="12" opacity=".68">${fourthLabel}</text><text x="683" y="124" font-size="25" font-weight="650">${fourthValue}</text>
 <text x="32" y="174" font-size="14" font-weight="600">${copy.chart}</text>
 <text x="868" y="174" font-size="10" text-anchor="end" opacity=".62">${escapeXml(activity.window.from)} — ${escapeXml(activity.window.to)} · ${escapeXml(coverage)}</text>
 <line class="grid" x1="64" y1="198" x2="868" y2="198" opacity=".45"/><line class="grid" x1="64" y1="262" x2="868" y2="262" opacity=".28"/><line class="grid" x1="64" y1="326" x2="868" y2="326" opacity=".65"/>
@@ -80,9 +92,9 @@ ${bars}
 ${ticks}
 <line class="divider" x1="32" y1="382" x2="868" y2="382" opacity=".55"/>
 <text x="32" y="414" font-size="14" font-weight="600">${copy.insights}</text>
-<text x="32" y="476" font-size="12" opacity=".68">${copy.highestDay}</text><text x="350" y="476" font-size="18" font-weight="600">${peakDay === null ? '—' : peakDay.date.slice(5)}</text>
+<text x="32" y="476" font-size="12" opacity=".68">${copy.highestDay}</text><text x="270" y="476" font-size="18" font-weight="600">${leftInsight}</text>
 <line class="divider" x1="450" y1="430" x2="450" y2="526" opacity=".55"/>
-<text x="482" y="476" font-size="12" opacity=".68">${copy.median}</text><text x="760" y="476" font-size="18" font-weight="600">${bounded(median, compact)}</text>
+<text x="482" y="476" font-size="12" opacity=".68">${copy.median}</text><text x="700" y="476" font-size="18" font-weight="600">${rightInsight}</text>
 <text x="32" y="568" font-size="10" opacity=".58">${copy.footer}</text>
 </svg>
 `;
@@ -125,7 +137,7 @@ ${cells}
 export function renderActivitySvg(input, locale = 'en') {
   if (!['en', 'ko'].includes(locale)) throw new Error('unsupported locale');
   const activity = parsePublicActivity(input);
-  if (activity.schemaVersion === 3) return renderSurface(activity, locale);
+  if ([3, 4].includes(activity.schemaVersion)) return renderSurface(activity, locale);
   if (activity.schemaVersion === 2) return renderProfile(activity);
   const maximum = Math.max(1, ...activity.days.map((day) => day.toolCalls ?? 0));
   const bars = activity.days.map((day, index) => {

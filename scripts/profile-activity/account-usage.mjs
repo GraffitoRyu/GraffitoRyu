@@ -1,4 +1,6 @@
 import { aggregateSnapshots } from './aggregate.mjs';
+import { parseAccountActivity } from './account-activity.mjs';
+import { parsePublicActivity } from './contract.mjs';
 
 const KEYS = ['observedAt', 'window', 'rateLimitStatus', 'creditAvailable', 'creditUnlimited', 'coverage'];
 const WINDOW_KEYS = ['durationMinutes', 'usedPercent', 'resetsAt'];
@@ -36,7 +38,16 @@ export function parseAccountUsage(value) {
   return { observedAt, window: { durationMinutes, usedPercent, resetsAt }, rateLimitStatus: value.rateLimitStatus, creditAvailable: value.creditAvailable, creditUnlimited: value.creditUnlimited, coverage: value.coverage };
 }
 
-export function processActivitySurface(snapshots, options, accountUsage = null) {
-  const activity = aggregateSnapshots(snapshots, options);
+export function attachAccountActivity(localActivity, accountActivity = null) {
+  return accountActivity === null ? localActivity : parsePublicActivity({
+    ...localActivity,
+    schemaVersion: 4,
+    metricScope: 'codex-activity-evidence',
+    accountActivity: parseAccountActivity(accountActivity),
+  });
+}
+
+export function processActivitySurface(snapshots, options, accountUsage = null, accountActivity = null) {
+  const activity = attachAccountActivity(aggregateSnapshots(snapshots, options), accountActivity);
   return { activity, accountUsage: accountUsage === null ? null : parseAccountUsage(accountUsage) };
 }

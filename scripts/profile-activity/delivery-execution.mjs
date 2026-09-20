@@ -81,9 +81,10 @@ function installedPaths(receiptFile) {
   return { nodeBinary: receipt.nodeBinary, cli: path.join(receipt.runtimeDir, 'cli.mjs'), config: path.join(receipt.stateDir, 'installed-config.json') };
 }
 
-function invoke(paths, command, input, pendingEnvelope) {
+function invoke(paths, command, input, pendingEnvelope, inputKind = 'account-usage') {
   try {
-    const stdout = execFileSync(paths.nodeBinary, [paths.cli, command, '--config', paths.config, ...(command === 'run' && input !== undefined ? ['--account-usage-stdin'] : [])], {
+    const inputFlag = inputKind === 'account-activity' ? '--account-activity-stdin' : '--account-usage-stdin';
+    const stdout = execFileSync(paths.nodeBinary, [paths.cli, command, '--config', paths.config, ...(command === 'run' && input !== undefined ? [inputFlag] : [])], {
       encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: MAX_BUFFER,
       ...(input === undefined ? {} : { input: JSON.stringify(input) }),
     });
@@ -97,8 +98,9 @@ function invoke(paths, command, input, pendingEnvelope) {
 }
 
 export function createInstalledCliInvocation(options) {
-  if (!options || Object.keys(options).some((key) => !['receiptFile', 'command', 'input', 'pendingEnvelope'].includes(key))) throw new Error('invalid invocation keys');
-  const { receiptFile, command, input, pendingEnvelope = null } = options;
+  if (!options || Object.keys(options).some((key) => !['receiptFile', 'command', 'input', 'inputKind', 'pendingEnvelope'].includes(key))) throw new Error('invalid invocation keys');
+  const { receiptFile, command, input, inputKind = 'account-usage', pendingEnvelope = null } = options;
+  if (!['account-usage', 'account-activity'].includes(inputKind)) throw new Error('invalid input kind');
   if (!ENTRYPOINT_COMMANDS.has(command)) throw new Error('invalid invocation');
   const paths = installedPaths(receiptFile);
   let started = false;
@@ -106,7 +108,7 @@ export function createInstalledCliInvocation(options) {
     run() {
       if (started) throw new Error('invocation already started');
       started = true;
-      if (command !== 'receive-run') return invoke(paths, command, input, pendingEnvelope);
+      if (command !== 'receive-run') return invoke(paths, command, input, pendingEnvelope, inputKind);
       const envelope = parseEnvelope(input);
       const acknowledgement = invoke(paths, 'receive', envelope, envelope);
       const publication = invoke(paths, 'run');

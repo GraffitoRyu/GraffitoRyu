@@ -8,6 +8,8 @@ let addDays;
 let activityCollectionFromSnapshot;
 let aggregateCollections;
 let currentActivityCollections;
+let attachAccountActivity;
+let parseAccountActivity;
 let parseAccountUsage;
 let processActivitySurface;
 let atomicWrite;
@@ -71,7 +73,8 @@ async function verifyBeforeImport(argv) {
 }
 
 async function loadRuntime() {
-  ({ parseAccountUsage, processActivitySurface } = await import('./account-usage.mjs'));
+  ({ attachAccountActivity, parseAccountUsage, processActivitySurface } = await import('./account-usage.mjs'));
+  ({ parseAccountActivity } = await import('./account-activity.mjs'));
   ({ aggregateCollections } = await import('./aggregate.mjs'));
   ({ activityCollectionFromSnapshot, currentActivityCollections } = await import('./collection.mjs'));
   ({ collectLogRoots, probeLogRoots } = await import('./collect.mjs'));
@@ -243,12 +246,24 @@ async function main() {
   }
   if (!config.publisher) throw new Error('publisher config required');
   let accountUsage = null;
-  if (args.command === 'run' && process.argv.includes('--account-usage-stdin')) {
+  let accountActivity = null;
+  const usageInput = args.command === 'run' && process.argv.includes('--account-usage-stdin');
+  const activityInput = args.command === 'run' && process.argv.includes('--account-activity-stdin');
+  if (usageInput && activityInput) throw new Error('single private input required');
+  if (usageInput) {
     accountUsage = parseAccountUsage(await readPrivateInput());
     if (accountUsage !== null) {
       await atomicWrite(path.join(config.stateDir, 'account-usage.json'), accountUsage, config.stateDir);
       stateChanged = true;
     }
+  }
+  if (activityInput) {
+    accountActivity = parseAccountActivity(await readPrivateInput());
+    await atomicWrite(path.join(config.stateDir, 'account-activity.json'), accountActivity, config.stateDir);
+    stateChanged = true;
+  } else {
+    try { accountActivity = parseAccountActivity(JSON.parse(await readFile(path.join(config.stateDir, 'account-activity.json'), 'utf8'))); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
   const now = new Date().toISOString();
   if (config.publisher?.collectionPath) {
@@ -275,7 +290,7 @@ async function main() {
       buildFinal: async (values) => {
         const current = currentActivityCollections(values, asOfDate);
         if (current === null) return null;
-        const activity = aggregateCollections(current, { asOfDate, referenceTime: now, staleAfterHours: config.staleAfterHours });
+        const activity = attachAccountActivity(aggregateCollections(current, { asOfDate, referenceTime: now, staleAfterHours: config.staleAfterHours }), accountActivity);
         if (!isPublishableActivity(activity)) return null;
         return generatedActivity(activity);
       },
@@ -287,7 +302,7 @@ async function main() {
   }
   const snapshots = await publisherSnapshots(config);
   if (args.dryRun) {
-    const { activity } = processActivitySurface(snapshots, { asOfDate, referenceTime: now, expectedSourceIds: config.expectedSources.map(({ sourceId }) => sourceId), independentSources: config.independentSources, staleAfterHours: config.staleAfterHours }, accountUsage);
+    const { activity } = processActivitySurface(snapshots, { asOfDate, referenceTime: now, expectedSourceIds: config.expectedSources.map(({ sourceId }) => sourceId), independentSources: config.independentSources, staleAfterHours: config.staleAfterHours }, accountUsage, accountActivity);
     const generated = generatedActivity(activity);
     await publishGenerated(config, generated, { dryRun: true });
     stateChanged = 'unknown';
@@ -305,7 +320,7 @@ async function main() {
     now,
     receiptFile: path.join(config.stateDir, 'publication-receipt.json'),
     publish: async (readySnapshots) => {
-      const { activity } = processActivitySurface(readySnapshots, { asOfDate, referenceTime: now, expectedSourceIds: config.expectedSources.map(({ sourceId }) => sourceId), independentSources: config.independentSources, staleAfterHours: config.staleAfterHours }, accountUsage);
+      const { activity } = processActivitySurface(readySnapshots, { asOfDate, referenceTime: now, expectedSourceIds: config.expectedSources.map(({ sourceId }) => sourceId), independentSources: config.independentSources, staleAfterHours: config.staleAfterHours }, accountUsage, accountActivity);
       if (!isPublishableActivity(activity)) throw new Error('aggregate unavailable');
       return publishGeneratedUnlocked(config, generatedActivity(activity));
     },

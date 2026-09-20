@@ -1,7 +1,10 @@
+import { parseAccountActivity } from './account-activity.mjs';
+
 const PRIVATE_KEYS = ['schemaVersion', 'sourceId', 'revision', 'policyId', 'collectedAt', 'timezone', 'window', 'days'];
 const PRIVATE_V3_KEYS = PRIVATE_KEYS.filter((key) => key !== 'sourceId');
 const PUBLIC_KEYS = ['schemaVersion', 'metricScope', 'timezone', 'window', 'asOfDate', 'completeThroughDate', 'status', 'summary', 'days'];
 const PROFILE_PUBLIC_KEYS = [...PUBLIC_KEYS, 'aggregation'];
+const EVIDENCE_PUBLIC_KEYS = [...PROFILE_PUBLIC_KEYS, 'accountActivity'];
 const DAY_KEYS = ['date', 'active', 'activeSessions', 'toolCalls', 'coverage'];
 const PROFILE_DAY_KEYS = [...DAY_KEYS, 'tokens', 'maxSessionTokens', 'longestSessionMinutes'];
 const SURFACE_DAY_KEYS = [...PROFILE_DAY_KEYS, 'newChats', 'pluginCalls', 'browserCalls', 'computerUseCalls', 'otherToolCalls', 'skillUses', 'fastTurns', 'modeTurns', 'reasoningTurns', 'reasoning'];
@@ -134,10 +137,12 @@ export function parsePrivateSnapshot(value) {
 }
 
 export function parsePublicActivity(value) {
-  const profile = [2, 3].includes(value?.schemaVersion);
-  const surface = value?.schemaVersion === 3;
-  exactKeys(value, profile ? PROFILE_PUBLIC_KEYS : PUBLIC_KEYS, 'public activity');
-  if (![1, 2, 3].includes(value.schemaVersion) || value.metricScope !== 'observed-local-codex' || value.timezone !== 'Asia/Seoul') throw new Error('invalid public identity');
+  const evidence = value?.schemaVersion === 4;
+  const profile = [2, 3, 4].includes(value?.schemaVersion);
+  const surface = [3, 4].includes(value?.schemaVersion);
+  exactKeys(value, evidence ? EVIDENCE_PUBLIC_KEYS : profile ? PROFILE_PUBLIC_KEYS : PUBLIC_KEYS, 'public activity');
+  const metricScope = evidence ? 'codex-activity-evidence' : 'observed-local-codex';
+  if (![1, 2, 3, 4].includes(value.schemaVersion) || value.metricScope !== metricScope || value.timezone !== 'Asia/Seoul') throw new Error('invalid public identity');
   const window = parseWindow(value.window);
   if (addDays(window.from, 29) !== window.to) throw new Error('public window must contain 30 days');
   const asOfDate = parseDate(value.asOfDate, 'asOfDate');
@@ -160,7 +165,7 @@ export function parsePublicActivity(value) {
     summary.fastModePercent = nullablePercentage(value.summary.fastModePercent, 'summary.fastModePercent');
     summary.reasoningPercent = reasoningPercent(value.summary.reasoningPercent, 'summary.reasoningPercent');
   }
-  return { schemaVersion: value.schemaVersion, metricScope: value.metricScope, timezone: value.timezone, window, asOfDate, completeThroughDate, status: value.status, ...(profile && { aggregation: value.aggregation }), summary, days: surface ? parseSurfacePublicDays(value.days, window) : parseDays(value.days, window, value.schemaVersion) };
+  return { schemaVersion: value.schemaVersion, metricScope: value.metricScope, timezone: value.timezone, window, asOfDate, completeThroughDate, status: value.status, ...(profile && { aggregation: value.aggregation }), ...(evidence && { accountActivity: parseAccountActivity(value.accountActivity) }), summary, days: surface ? parseSurfacePublicDays(value.days, window) : parseDays(value.days, window, value.schemaVersion) };
 }
 
 export function isPublishableActivity(value) {

@@ -1,6 +1,6 @@
 {
-  "schemaVersion": 3,
-  "metricScope": "observed-local-codex",
+  "schemaVersion": 4,
+  "metricScope": "codex-activity-evidence",
   "timezone": "Asia/Seoul",
   "window": {
     "from": "2026-08-22",
@@ -10,6 +10,222 @@
   "completeThroughDate": null,
   "status": "partial",
   "aggregation": "sum",
+  "accountActivity": {
+    "schemaVersion": 1,
+    "observedDate": "2026-09-20",
+    "analytics": {
+      "readSucceeded": true,
+      "window": {
+        "from": "2026-08-22",
+        "to": "2026-09-20"
+      },
+      "definition": "personal-codex-and-work",
+      "grouping": "daily",
+      "refreshCadence": null,
+      "localComparable": false,
+      "automatedCollection": false,
+      "totals": {
+        "turns": 8133,
+        "pluginCalls": 12922,
+        "skillUses": 4238
+      },
+      "days": [
+        {
+          "date": "2026-08-22",
+          "turns": 89,
+          "pluginCalls": 29,
+          "skillUses": 38
+        },
+        {
+          "date": "2026-08-23",
+          "turns": 452,
+          "pluginCalls": 355,
+          "skillUses": 248
+        },
+        {
+          "date": "2026-08-24",
+          "turns": 163,
+          "pluginCalls": 124,
+          "skillUses": 97
+        },
+        {
+          "date": "2026-08-25",
+          "turns": 394,
+          "pluginCalls": 146,
+          "skillUses": 221
+        },
+        {
+          "date": "2026-08-26",
+          "turns": 364,
+          "pluginCalls": 49,
+          "skillUses": 165
+        },
+        {
+          "date": "2026-08-27",
+          "turns": 199,
+          "pluginCalls": 34,
+          "skillUses": 97
+        },
+        {
+          "date": "2026-08-28",
+          "turns": 361,
+          "pluginCalls": 111,
+          "skillUses": 187
+        },
+        {
+          "date": "2026-08-29",
+          "turns": 576,
+          "pluginCalls": 38,
+          "skillUses": 361
+        },
+        {
+          "date": "2026-08-30",
+          "turns": 540,
+          "pluginCalls": 20,
+          "skillUses": 221
+        },
+        {
+          "date": "2026-08-31",
+          "turns": 210,
+          "pluginCalls": 57,
+          "skillUses": 204
+        },
+        {
+          "date": "2026-09-01",
+          "turns": 165,
+          "pluginCalls": 28,
+          "skillUses": 115
+        },
+        {
+          "date": "2026-09-02",
+          "turns": 210,
+          "pluginCalls": 74,
+          "skillUses": 200
+        },
+        {
+          "date": "2026-09-03",
+          "turns": 507,
+          "pluginCalls": 32,
+          "skillUses": 120
+        },
+        {
+          "date": "2026-09-04",
+          "turns": 294,
+          "pluginCalls": 384,
+          "skillUses": 22
+        },
+        {
+          "date": "2026-09-05",
+          "turns": 90,
+          "pluginCalls": 37,
+          "skillUses": 16
+        },
+        {
+          "date": "2026-09-06",
+          "turns": 268,
+          "pluginCalls": 2844,
+          "skillUses": 249
+        },
+        {
+          "date": "2026-09-07",
+          "turns": 233,
+          "pluginCalls": 1331,
+          "skillUses": 197
+        },
+        {
+          "date": "2026-09-08",
+          "turns": 822,
+          "pluginCalls": 169,
+          "skillUses": 74
+        },
+        {
+          "date": "2026-09-09",
+          "turns": 351,
+          "pluginCalls": 461,
+          "skillUses": 198
+        },
+        {
+          "date": "2026-09-10",
+          "turns": 221,
+          "pluginCalls": 1039,
+          "skillUses": 131
+        },
+        {
+          "date": "2026-09-11",
+          "turns": 112,
+          "pluginCalls": 368,
+          "skillUses": 97
+        },
+        {
+          "date": "2026-09-12",
+          "turns": 95,
+          "pluginCalls": 528,
+          "skillUses": 35
+        },
+        {
+          "date": "2026-09-13",
+          "turns": 165,
+          "pluginCalls": 624,
+          "skillUses": 62
+        },
+        {
+          "date": "2026-09-14",
+          "turns": 326,
+          "pluginCalls": 909,
+          "skillUses": 205
+        },
+        {
+          "date": "2026-09-15",
+          "turns": 169,
+          "pluginCalls": 697,
+          "skillUses": 119
+        },
+        {
+          "date": "2026-09-16",
+          "turns": 138,
+          "pluginCalls": 391,
+          "skillUses": 74
+        },
+        {
+          "date": "2026-09-17",
+          "turns": 90,
+          "pluginCalls": 224,
+          "skillUses": 53
+        },
+        {
+          "date": "2026-09-18",
+          "turns": 226,
+          "pluginCalls": 867,
+          "skillUses": 147
+        },
+        {
+          "date": "2026-09-19",
+          "turns": 303,
+          "pluginCalls": 952,
+          "skillUses": 279
+        },
+        {
+          "date": "2026-09-20",
+          "turns": null,
+          "pluginCalls": null,
+          "skillUses": 6
+        }
+      ]
+    },
+    "profile": {
+      "readSucceeded": true,
+      "definition": "profile-daily-tokens",
+      "refreshCadence": null,
+      "localComparable": false,
+      "automatedCollection": false,
+      "tokenDay": {
+        "date": "2026-09-06",
+        "displayValue": 10.7,
+        "scale": 100000000,
+        "precision": "rounded-display"
+      }
+    }
+  },
   "summary": {
     "activeDays": 30,
     "sessionDays": 235,

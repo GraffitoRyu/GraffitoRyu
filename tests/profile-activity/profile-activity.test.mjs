@@ -21,6 +21,41 @@ import { SOURCE_A, SOURCE_B, call, makePublicActivity, makeSnapshot, makeV3Input
 const run = promisify(execFile);
 const options = { asOfDate: '2026-09-13', referenceTime: '2026-09-13T09:00:00Z', expectedSourceIds: [SOURCE_A, SOURCE_B], independentSources: true };
 
+function accountActivitySample() {
+  const turns = [89, 452, 163, 394, 364, 199, 361, 576, 540, 210, 165, 210, 507, 294, 90, 268, 233, 822, 351, 221, 112, 95, 165, 326, 169, 138, 90, 226, 303, null];
+  const pluginCalls = [29, 355, 124, 146, 49, 34, 111, 38, 20, 57, 28, 74, 32, 384, 37, 2844, 1331, 169, 461, 1039, 368, 528, 624, 909, 697, 391, 224, 867, 952, null];
+  const skillUses = [38, 248, 97, 221, 165, 97, 187, 361, 221, 204, 115, 200, 120, 22, 16, 249, 197, 74, 198, 131, 97, 35, 62, 205, 119, 74, 53, 147, 279, 6];
+  const start = new Date('2026-08-22T00:00:00Z');
+  return {
+    schemaVersion: 1,
+    observedDate: '2026-09-20',
+    analytics: {
+      readSucceeded: true,
+      window: { from: '2026-08-22', to: '2026-09-20' },
+      definition: 'personal-codex-and-work',
+      grouping: 'daily',
+      refreshCadence: null,
+      localComparable: false,
+      automatedCollection: false,
+      totals: { turns: 8133, pluginCalls: 12922, skillUses: 4238 },
+      days: turns.map((value, index) => ({
+        date: new Date(start.valueOf() + index * 86400000).toISOString().slice(0, 10),
+        turns: value,
+        pluginCalls: pluginCalls[index],
+        skillUses: skillUses[index],
+      })),
+    },
+    profile: {
+      readSucceeded: true,
+      definition: 'profile-daily-tokens',
+      refreshCadence: null,
+      localComparable: false,
+      automatedCollection: false,
+      tokenDay: { date: '2026-09-06', displayValue: 10.7, scale: 100000000, precision: 'rounded-display' },
+    },
+  };
+}
+
 async function temp() {
   return mkdtemp(path.join(os.tmpdir(), 'profile-activity-'));
 }
@@ -577,6 +612,57 @@ test('account usage rejects identifiers, billing metadata, raw responses, extras
   assert.throws(() => parseAccountUsage({ ...sample, observedAt: null }), /observedAt/);
 });
 
+test('account activity accepts only verified anonymous UI fields and reconciles exact totals', async () => {
+  const { parseAccountActivity } = await import('../../scripts/profile-activity/account-activity.mjs');
+  const sample = accountActivitySample();
+  assert.deepEqual(parseAccountActivity(sample), sample);
+  assert.equal(sample.analytics.days.reduce((sum, day) => sum + (day.turns ?? 0), 0), sample.analytics.totals.turns);
+  assert.equal(sample.analytics.days.reduce((sum, day) => sum + (day.pluginCalls ?? 0), 0), sample.analytics.totals.pluginCalls);
+  assert.equal(sample.analytics.days.reduce((sum, day) => sum + (day.skillUses ?? 0), 0), sample.analytics.totals.skillUses);
+  for (const extra of ['accountId', 'sourceId', 'cookie', 'rawResponse', 'path']) {
+    assert.throws(() => parseAccountActivity({ ...sample, [extra]: 'PRIVATE-CANARY' }), /keys/);
+  }
+  const mismatch = structuredClone(sample);
+  mismatch.analytics.totals.turns += 1;
+  assert.throws(() => parseAccountActivity(mismatch), /total/);
+});
+
+test('comparable account metrics replace missing or smaller local values and refuse contradictions', async () => {
+  const { mergeVerifiedMetric } = await import('../../scripts/profile-activity/account-activity.mjs');
+  assert.deepEqual(mergeVerifiedMetric(null, 10, { sameDefinition: true, samePeriod: true }), { value: 10, source: 'account' });
+  assert.deepEqual(mergeVerifiedMetric(0, 10, { sameDefinition: true, samePeriod: true }), { value: 10, source: 'account' });
+  assert.deepEqual(mergeVerifiedMetric(9, 10, { sameDefinition: true, samePeriod: true }), { value: 10, source: 'account' });
+  assert.deepEqual(mergeVerifiedMetric(10, 10, { sameDefinition: true, samePeriod: true }), { value: 10, source: 'matched' });
+  assert.deepEqual(mergeVerifiedMetric(9, 10, { sameDefinition: false, samePeriod: true }), { value: null, source: 'separate' });
+  assert.throws(() => mergeVerifiedMetric(11, 10, { sameDefinition: true, samePeriod: true }), /contradiction/);
+});
+
+test('verified account activity stays separate from local counts and drives bilingual dashboard copy', async () => {
+  const { processActivitySurface } = await import('../../scripts/profile-activity/account-usage.mjs');
+  const result = processActivitySurface([
+    makeV3Input(),
+    makeV3Input({ sourceId: SOURCE_B }),
+  ], options, null, accountActivitySample());
+  assert.equal(result.activity.schemaVersion, 4);
+  assert.equal(result.activity.metricScope, 'codex-activity-evidence');
+  assert.equal(result.activity.summary.pluginCalls, 0);
+  assert.equal(result.activity.accountActivity.analytics.totals.pluginCalls, 12922);
+  assert.equal(parsePublicActivity(result.activity).accountActivity.profile.tokenDay.displayValue, 10.7);
+
+  const english = renderActivitySvg(result.activity);
+  const korean = renderActivitySvg(result.activity, 'ko');
+  assert.match(english, /Account turns/);
+  assert.match(english, /Plugin calls/);
+  assert.match(english, /Skills used/);
+  assert.match(english, /Local token floor/);
+  assert.match(english, /Profile token display/);
+  assert.match(english, /1\.07B/);
+  assert.match(korean, /계정 턴/);
+  assert.match(korean, /프로필 토큰 표시/);
+  assert.match(korean, /10\.7억/);
+  assert.doesNotMatch(english, /Observed tokens|Unavailable|Not observed/);
+});
+
 test('installed run accepts one private account sample without exposing it in CLI output', async () => {
   const fixture = await installedPublisherFixture();
   const sample = {
@@ -588,6 +674,14 @@ test('installed run accepts one private account sample without exposing it in CL
   assert.doesNotMatch(stableJson(result), /usedPercent|resetsAt|credit|42\.5/);
   assert.deepEqual(JSON.parse(await readFile(path.join(fixture.stateDir, 'account-usage.json'), 'utf8')), sample);
   assert.throws(() => deliveryExecution.createInstalledCliInvocation({ receiptFile: fixture.receiptFile, command: 'run', input: { ...sample, accountId: 'PRIVATE-CANARY' } }).run());
+});
+
+test('installed run stores verified account activity once and reuses it without exposing fields', async () => {
+  const fixture = await installedPublisherFixture();
+  const sample = accountActivitySample();
+  const result = deliveryExecution.createInstalledCliInvocation({ receiptFile: fixture.receiptFile, command: 'run', input: sample, inputKind: 'account-activity' }).run();
+  assert.doesNotMatch(stableJson(result), /8133|12922|4238|accountActivity/);
+  assert.deepEqual(JSON.parse(await readFile(path.join(fixture.stateDir, 'account-activity.json'), 'utf8')), sample);
 });
 
 test('v3 envelope uses a version-matched schema and retains no category identity', () => {
