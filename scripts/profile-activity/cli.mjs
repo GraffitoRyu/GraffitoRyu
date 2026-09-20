@@ -299,7 +299,7 @@ async function main() {
     const result = await publishOwnedCollection(config, collection, {
       referenceTime: now,
       buildFinal: async (values) => {
-        if (!accountActivityOwner) return null;
+        if (!accountActivityOwner || accountActivity === null) return null;
         const current = currentActivityCollections(values, asOfDate);
         if (current === null) return null;
         const activity = attachAccountActivity(aggregateCollections(current, { asOfDate, referenceTime: now, staleAfterHours: config.staleAfterHours }), accountActivity);
