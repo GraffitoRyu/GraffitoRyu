@@ -240,6 +240,30 @@ test('v3 collector reduces sessions, tool families, and explicit structured even
   assert.doesNotMatch(stableJson(day), /SESSION-CANARY|PRIVATE|plugin_id|skill_name|model/);
 });
 
+test('v3 collector reads current turn context reasoning without retaining model identity', async () => {
+  const day = (await collectFiles({ 'a.jsonl': rolloutLines({ events: [
+    message('2026-09-12T01:00:00Z'),
+    { timestamp: '2026-09-12T01:01:00Z', type: 'turn_context', payload: { effort: 'xhigh', model: 'PRIVATE-MODEL' } },
+  ] }) })).days[0];
+
+  assert.equal(day.reasoningTurns, 1);
+  assert.deepEqual(day.reasoning, { none: 0, low: 0, medium: 0, high: 0, xhigh: 1, other: 0 });
+  assert.doesNotMatch(stableJson(day), /PRIVATE|model/);
+});
+
+test('v3 collector classifies dotted and MCP tool namespaces into fixed anonymous families', async () => {
+  const day = (await collectFiles({ 'a.jsonl': rolloutLines({ events: [
+    call('2026-09-12T01:00:00Z', 'web', { name: 'web.run' }),
+    call('2026-09-12T01:01:00Z', 'computer', { name: 'mcp__cua_repl__js' }),
+    call('2026-09-12T01:02:00Z', 'plugin', { name: 'mcp__example__call' }),
+  ] }) })).days[0];
+
+  assert.deepEqual(
+    [day.toolCalls, day.browserCalls, day.computerUseCalls, day.pluginCalls, day.otherToolCalls],
+    [3, 1, 1, 1, 0],
+  );
+});
+
 test('v3 collector keeps absent or malformed optional telemetry null without corrupting core counts', async () => {
   const absent = (await collectFiles({ 'a.jsonl': rolloutLines({ events: [call('2026-09-12T01:00:00Z', 'a')] }) })).days[0];
   assert.equal(absent.toolCalls, 1);
@@ -402,13 +426,24 @@ test('v3 renderer labels verified partial observations as lower bounds', () => {
   assert.match(svg, />≥300</);
   assert.match(svg, />≥120</);
   assert.match(svg, /≥10 tokens \(partial\)/);
-  assert.match(svg, /Unavailable/);
+  assert.match(svg, /Not observed/);
 
   const complete = renderActivitySvg(aggregateSnapshots([
     makeV3Input({ sessions: 1, calls: 1, tokens: 1, skillUses: 0 }),
     makeV3Input({ sourceId: SOURCE_B, sessions: 1, calls: 1, tokens: 1, skillUses: 0 }),
   ], options));
   assert.doesNotMatch(complete, /≥/);
+});
+
+test('v3 renderer labels absent optional telemetry as not observed', () => {
+  const svg = renderActivitySvg(aggregateSnapshots([
+    makeV3Input({ sessions: 1, calls: 1, tokens: 1 }),
+    makeV3Input({ sourceId: SOURCE_B, sessions: 1, calls: 1, tokens: 1 }),
+  ], options));
+
+  assert.match(svg, /Skill uses<\/text><text[^>]+>Not observed<\/text>/);
+  assert.match(svg, /Fast mode<\/text><text[^>]+>Not observed<\/text>/);
+  assert.match(svg, /Reasoning[\s\S]+Not observed/);
 });
 
 test('v3 renderer draws a bounded 30-day token histogram with readable axes and callouts', () => {

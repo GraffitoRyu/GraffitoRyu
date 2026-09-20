@@ -19,7 +19,7 @@ function duration(minutes) {
 }
 
 function percent(value) {
-  return value === null ? 'Unavailable' : `${value.toLocaleString('en-US')}%`;
+  return value === null ? 'Not observed' : `${value.toLocaleString('en-US')}%`;
 }
 
 function renderSurface(activity) {
@@ -38,7 +38,7 @@ function renderSurface(activity) {
   }).join('');
   const ticks = [0, 7, 14, 21, 29].map((index) => `<text x="${75.5 + index * 27}" y="255" font-size="9" text-anchor="middle" opacity=".62">${activity.days[index].date.slice(5)}</text>`).join('');
   const reasoning = activity.summary.reasoningPercent;
-  const reasoningValues = reasoning === null ? 'Unavailable' : ['none', 'low', 'medium', 'high', 'xhigh', 'other'].map((key) => `${percent(reasoning[key])}`).join(' · ');
+  const reasoningValues = reasoning === null ? 'Not observed' : ['none', 'low', 'medium', 'high', 'xhigh', 'other'].map((key) => `${percent(reasoning[key])}`).join(' · ');
   const status = activity.status === 'ready' ? 'Complete selected-log coverage' : partial ? 'Observed lower bounds · partial coverage' : 'Coverage unavailable';
   return `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="570" viewBox="0 0 900 570" role="img" aria-labelledby="title description">
 <title id="title">Codex activity silhouette</title>
@@ -66,7 +66,7 @@ ${ticks}
 <text x="320" y="320" font-size="12" opacity=".72">New chats</text><text x="320" y="346" font-size="20" font-weight="600">${bounded(activity.summary.newChats)}</text>
 <text x="464" y="320" font-size="12" opacity=".72">Tool calls</text><text x="464" y="346" font-size="20" font-weight="600">${bounded(activity.summary.toolCalls)}</text>
 <text x="608" y="320" font-size="12" opacity=".72">Plugin calls</text><text x="608" y="346" font-size="20" font-weight="600">${bounded(activity.summary.pluginCalls)}</text>
-<text x="752" y="320" font-size="12" opacity=".72">Skill uses</text><text x="752" y="346" font-size="20" font-weight="600">${bounded(activity.summary.skillUses)}</text>
+<text x="752" y="320" font-size="12" opacity=".72">Skill uses</text><text x="752" y="346" font-size="20" font-weight="600">${activity.summary.skillUses === null ? 'Not observed' : bounded(activity.summary.skillUses)}</text>
 <text x="32" y="384" font-size="12" opacity=".72">Browser/web</text><text x="32" y="410" font-size="20" font-weight="600">${bounded(activity.summary.browserCalls)}</text>
 <text x="248" y="384" font-size="12" opacity=".72">Computer use</text><text x="248" y="410" font-size="20" font-weight="600">${bounded(activity.summary.computerUseCalls)}</text>
 <text x="464" y="384" font-size="12" opacity=".72">Other tools</text><text x="464" y="410" font-size="20" font-weight="600">${bounded(activity.summary.otherToolCalls)}</text>

@@ -6,7 +6,7 @@ import readline from 'node:readline';
 import { addDays } from './contract.mjs';
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024;
-const CACHE_VERSION = 4;
+const CACHE_VERSION = 5;
 const REASONING_CATEGORIES = new Set(['none', 'low', 'medium', 'high', 'xhigh']);
 
 function typeOf(value) {
@@ -60,8 +60,9 @@ async function boundaryHash(file, offset) {
 function toolCategory(payload, itemType) {
   if (typeof payload.plugin_id === 'string' || typeof payload.plugin_name === 'string') return 'plugin';
   const name = typeof payload.name === 'string' ? payload.name.toLowerCase() : '';
-  if (itemType === 'web_search_call' || /^(?:browser|web)(?:_|$)/.test(name)) return 'browser';
-  if (/^(?:computer|computer_use)(?:_|$)/.test(name)) return 'computer';
+  if (itemType === 'web_search_call' || /^(?:browser|web)(?:[._]|$)/.test(name)) return 'browser';
+  if (/^(?:computer|computer_use)(?:[._]|$)/.test(name) || /^mcp__cua_repl(?:__|$)/.test(name)) return 'computer';
+  if (/^mcp__/.test(name)) return 'plugin';
   return 'other';
 }
 
@@ -150,8 +151,11 @@ async function scanFile(file, previous = undefined) {
       state.events.push({ date, timestamp: record.timestamp, sessionId: state.sessionId, kind: 'tokens', callId: null, hash, sessionTotal });
       continue;
     }
-    if (record.type === 'event_msg' && ['skill_use', 'mode', 'reasoning'].includes(payload?.type)) {
-      const optionalKind = payload.type === 'skill_use' ? 'skill' : payload.type;
+    const optionalType = record.type === 'turn_context' ? 'reasoning'
+      : record.type === 'event_msg' && ['skill_use', 'mode', 'reasoning'].includes(payload?.type) ? payload.type
+        : null;
+    if (optionalType) {
+      const optionalKind = optionalType === 'skill_use' ? 'skill' : optionalType;
       const date = kstDate(record.timestamp);
       const valid = date && state.sessionId && !state.excluded
         && (optionalKind === 'skill' ? typeof (payload.skill_name ?? payload.skill) === 'string'
