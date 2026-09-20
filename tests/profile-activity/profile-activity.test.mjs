@@ -411,6 +411,70 @@ test('v3 renderer labels verified partial observations as lower bounds', () => {
   assert.doesNotMatch(complete, /≥/);
 });
 
+test('v3 renderer draws a bounded 30-day token histogram with readable axes and callouts', () => {
+  const complete = { sessions: 1, calls: 1, tokens: 10, skillUses: 0, fastTurns: 0, modeTurns: 0, reasoning: { none: 0, low: 0, medium: 0, high: 0, xhigh: 0, other: 0 } };
+  const activity = aggregateSnapshots([
+    makeV3Input(complete),
+    makeV3Input({ sourceId: SOURCE_B, ...complete }),
+  ], options);
+  activity.days[0].tokens = 0;
+  activity.days[1].tokens = 9_000_000_000_000;
+  activity.days[29].tokens = 50;
+
+  const svg = renderActivitySvg(activity);
+  const bars = svg.match(/class="token-bar(?: token-unknown)?"/g) ?? [];
+
+  assert.equal(bars.length, 30);
+  assert.match(svg, /class="token-bar" x="68"/);
+  assert.match(svg, /class="token-bar" x="851"/);
+  assert.match(svg, /y="234" width="15" height="2"/);
+  assert.match(svg, />9T<\/text>/);
+  assert.match(svg, />Max 9T<\/text>/);
+  assert.match(svg, />Latest 50<\/text>/);
+  assert.match(svg, />08-15<\/text>/);
+  assert.match(svg, />09-13<\/text>/);
+  assert.match(svg, /text-anchor="end"/);
+  assert.match(svg, /@media\(prefers-color-scheme:dark\)/);
+  assert.match(svg, /\.grid\{stroke:#d0d7de\}.*\.grid\{stroke:#30363d\}/);
+  assert.match(svg, /class="panel"[^>]+fill="#fff"/);
+});
+
+test('v3 renderer distinguishes unknown, zero, partial, and ready token bars', () => {
+  const observed = makeV3Input({ sessions: 1, calls: 1, tokens: 10 });
+  const unavailable = makeV3Input({ sourceId: SOURCE_B });
+  unavailable.snapshot.days = unavailable.snapshot.days.map((day) => Object.fromEntries(
+    Object.keys(day).map((key) => [key, key === 'date' ? day.date : key === 'coverage' ? 'unknown' : null]),
+  ));
+  const partial = aggregateSnapshots([observed, unavailable], options);
+  partial.days[0] = Object.fromEntries(Object.keys(partial.days[0]).map((key) => [
+    key,
+    key === 'date' ? partial.days[0].date : key === 'coverage' ? 'unknown' : null,
+  ]));
+  partial.days[1].tokens = 0;
+
+  const partialSvg = renderActivitySvg(partial);
+  assert.match(partialSvg, /class="token-bar token-unknown"/);
+  assert.match(partialSvg, /Partial values shown as ≥/);
+  assert.match(partialSvg, />Max ≥10<\/text>/);
+  assert.match(partialSvg, />Latest ≥10<\/text>/);
+
+  const unavailableSurface = structuredClone(partial);
+  unavailableSurface.status = 'unavailable';
+  unavailableSurface.days = unavailableSurface.days.map((day) => Object.fromEntries(Object.keys(day).map((key) => [
+    key,
+    key === 'date' ? day.date : key === 'coverage' ? 'unknown' : null,
+  ])));
+  const unavailableSvg = renderActivitySvg(unavailableSurface);
+  assert.match(unavailableSvg, />Max Unavailable<\/text>/);
+  assert.match(unavailableSvg, />Latest Unavailable<\/text>/);
+
+  const readySvg = renderActivitySvg(aggregateSnapshots([
+    makeV3Input({ sessions: 1, calls: 1, tokens: 1, skillUses: 0, fastTurns: 0, modeTurns: 0, reasoning: { none: 0, low: 0, medium: 0, high: 0, xhigh: 0, other: 0 } }),
+    makeV3Input({ sourceId: SOURCE_B, sessions: 1, calls: 1, tokens: 1, skillUses: 0, fastTurns: 0, modeTurns: 0, reasoning: { none: 0, low: 0, medium: 0, high: 0, xhigh: 0, other: 0 } }),
+  ], options));
+  assert.doesNotMatch(readySvg, /Partial values shown|≥/);
+});
+
 test('account usage accepts only the exact sanitized private contract and joins once after device merge', async () => {
   const { parseAccountUsage, processActivitySurface } = await import('../../scripts/profile-activity/account-usage.mjs');
   const sample = {
