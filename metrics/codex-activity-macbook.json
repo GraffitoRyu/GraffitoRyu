@@ -1,32 +1,10 @@
 {
-  "schemaVersion": 3,
-  "metricScope": "observed-local-codex",
+  "schemaVersion": 1,
+  "metricScope": "observed-local-codex-collection",
   "timezone": "Asia/Seoul",
   "window": {
     "from": "2026-08-22",
     "to": "2026-09-20"
-  },
-  "asOfDate": "2026-09-20",
-  "completeThroughDate": null,
-  "status": "partial",
-  "aggregation": "sum",
-  "summary": {
-    "activeDays": 30,
-    "sessionDays": null,
-    "toolCalls": null,
-    "totalTokens": null,
-    "maxSessionTokens": null,
-    "longestSessionMinutes": null,
-    "currentStreakDays": 30,
-    "longestStreakDays": 30,
-    "newChats": null,
-    "pluginCalls": null,
-    "browserCalls": null,
-    "computerUseCalls": null,
-    "otherToolCalls": null,
-    "skillUses": null,
-    "fastModePercent": null,
-    "reasoningPercent": null
   },
   "days": [
     {
@@ -43,8 +21,10 @@
       "tokens": 159329863,
       "maxSessionTokens": 129588293,
       "longestSessionMinutes": 130,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
@@ -61,8 +41,10 @@
       "tokens": null,
       "maxSessionTokens": null,
       "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
@@ -79,8 +61,10 @@
       "tokens": null,
       "maxSessionTokens": null,
       "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
@@ -97,8 +81,10 @@
       "tokens": null,
       "maxSessionTokens": null,
       "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
@@ -115,8 +101,10 @@
       "tokens": null,
       "maxSessionTokens": null,
       "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
@@ -133,26 +121,30 @@
       "tokens": null,
       "maxSessionTokens": null,
       "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
       "date": "2026-08-28",
       "active": true,
-      "activeSessions": null,
-      "newChats": null,
-      "toolCalls": null,
-      "pluginCalls": null,
-      "browserCalls": null,
-      "computerUseCalls": null,
-      "otherToolCalls": null,
+      "activeSessions": 22,
+      "newChats": 16,
+      "toolCalls": 2098,
+      "pluginCalls": 0,
+      "browserCalls": 0,
+      "computerUseCalls": 0,
+      "otherToolCalls": 2098,
       "skillUses": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "tokens": 172165785,
+      "maxSessionTokens": 60630107,
+      "longestSessionMinutes": 1608,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
@@ -169,8 +161,10 @@
       "tokens": null,
       "maxSessionTokens": null,
       "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
@@ -187,8 +181,10 @@
       "tokens": null,
       "maxSessionTokens": null,
       "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
@@ -205,26 +201,30 @@
       "tokens": null,
       "maxSessionTokens": null,
       "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
       "date": "2026-09-01",
       "active": true,
-      "activeSessions": 35,
-      "newChats": 26,
-      "toolCalls": 2483,
+      "activeSessions": 27,
+      "newChats": 21,
+      "toolCalls": 1986,
       "pluginCalls": 0,
       "browserCalls": 0,
       "computerUseCalls": 0,
-      "otherToolCalls": 2483,
+      "otherToolCalls": 1986,
       "skillUses": null,
-      "tokens": 272227426,
+      "tokens": 223436455,
       "maxSessionTokens": 256318310,
-      "longestSessionMinutes": 12085,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "longestSessionMinutes": 198,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
@@ -241,8 +241,10 @@
       "tokens": null,
       "maxSessionTokens": null,
       "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
@@ -259,8 +261,10 @@
       "tokens": null,
       "maxSessionTokens": null,
       "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
@@ -277,26 +281,30 @@
       "tokens": null,
       "maxSessionTokens": null,
       "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
       "date": "2026-09-05",
       "active": true,
-      "activeSessions": 5,
+      "activeSessions": 4,
       "newChats": 1,
-      "toolCalls": 484,
+      "toolCalls": 483,
       "pluginCalls": 0,
       "browserCalls": 0,
       "computerUseCalls": 0,
-      "otherToolCalls": 484,
+      "otherToolCalls": 483,
       "skillUses": null,
       "tokens": 43908822,
-      "maxSessionTokens": 295476810,
+      "maxSessionTokens": 35210439,
       "longestSessionMinutes": 0,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
@@ -313,8 +321,10 @@
       "tokens": null,
       "maxSessionTokens": null,
       "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
@@ -331,8 +341,10 @@
       "tokens": null,
       "maxSessionTokens": null,
       "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
@@ -349,8 +361,10 @@
       "tokens": null,
       "maxSessionTokens": null,
       "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
@@ -367,8 +381,10 @@
       "tokens": null,
       "maxSessionTokens": null,
       "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
@@ -385,8 +401,10 @@
       "tokens": null,
       "maxSessionTokens": null,
       "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
@@ -403,8 +421,10 @@
       "tokens": null,
       "maxSessionTokens": null,
       "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
@@ -421,8 +441,10 @@
       "tokens": null,
       "maxSessionTokens": null,
       "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
@@ -439,8 +461,10 @@
       "tokens": null,
       "maxSessionTokens": null,
       "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
@@ -457,8 +481,10 @@
       "tokens": null,
       "maxSessionTokens": null,
       "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
@@ -475,8 +501,10 @@
       "tokens": null,
       "maxSessionTokens": null,
       "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
@@ -493,8 +521,10 @@
       "tokens": null,
       "maxSessionTokens": null,
       "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
@@ -511,8 +541,10 @@
       "tokens": null,
       "maxSessionTokens": null,
       "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
@@ -529,8 +561,10 @@
       "tokens": null,
       "maxSessionTokens": null,
       "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
@@ -547,8 +581,10 @@
       "tokens": null,
       "maxSessionTokens": null,
       "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     },
     {
@@ -565,8 +601,10 @@
       "tokens": null,
       "maxSessionTokens": null,
       "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
+      "fastTurns": null,
+      "modeTurns": null,
+      "reasoningTurns": null,
+      "reasoning": null,
       "coverage": "partial"
     }
   ]
