@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="900" height="590" viewBox="0 0 900 590" role="img" aria-labelledby="title description">
 <title id="title">Codex 계정 활동</title>
 <desc id="description">공식 Codex App Server 토큰과 계정 Analytics 활동. 30 / 30일 토큰 일수</desc>
-<defs><style>text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;fill:#1f2328}.grid,.divider{stroke:#d0d7de}.panel{fill:#0d1117;fill-opacity:.12;stroke:#d0d7de}@media(prefers-color-scheme:dark){text{fill:#e6edf3}.grid,.divider{stroke:#30363d}.panel{fill-opacity:.96;stroke:#30363d}}</style></defs>
-<rect class="panel" x=".5" y=".5" width="899" height="589" rx="12" fill="#0d1117" fill-opacity=".12" stroke="#d0d7de"/>
+<defs><style>text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;fill:#1f2328}.grid,.divider{stroke:#d0d7de}.panel{fill:#0d1117;fill-opacity:.02;stroke:#d0d7de}@media(prefers-color-scheme:dark){text{fill:#e6edf3}.grid,.divider{stroke:#30363d}.panel{fill-opacity:.36;stroke:#30363d}}</style></defs>
+<rect class="panel" x=".5" y=".5" width="899" height="589" rx="12" fill="#0d1117" fill-opacity=".02" stroke="#d0d7de"/>
 <text x="32" y="38" font-size="22" font-weight="600">Codex 계정 활동</text>
 <text x="32" y="61" font-size="14" opacity=".68">공식 App Server 토큰 · 계정 Analytics</text>
 <text x="32" y="94" font-size="14" opacity=".68">계정 누적 토큰</text><text x="32" y="124" font-size="27" font-weight="650">411.27억</text>
