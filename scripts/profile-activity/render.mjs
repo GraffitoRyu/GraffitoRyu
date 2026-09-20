@@ -12,59 +12,78 @@ function compactNumber(value) {
   return value === null ? 'Unavailable' : new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
 }
 
+function compactLowerBound(value, locale = 'en') {
+  if (value === null) return 'Unavailable';
+  const units = locale === 'ko'
+    ? [[1e12, '조'], [1e8, '억'], [1e4, '만']]
+    : [[1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'K']];
+  const unit = units.find(([divisor]) => value >= divisor);
+  if (!unit) return value.toLocaleString(locale === 'ko' ? 'ko-KR' : 'en-US');
+  const scaled = Math.floor(value / unit[0] * 10) / 10;
+  return `${scaled.toLocaleString(locale === 'ko' ? 'ko-KR' : 'en-US', { maximumFractionDigits: 1 })}${unit[1]}`;
+}
+
 function duration(minutes) {
   if (minutes === null) return 'Unavailable';
   if (minutes < 60) return `${minutes}m`;
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
-function renderSurface(activity) {
+function renderSurface(activity, locale) {
+  const ko = locale === 'ko';
+  const copy = ko ? {
+    title: 'Codex로 만든 30일', subtitle: '최근 30일 로컬 활동 관측', tokens: '관측 토큰', sessions: '관측 세션 시작', tools: '도구 호출', active: '활동일', chart: '일별 토큰 활동', insights: '활동 인사이트', highestDay: '가장 높은 관측일', median: '관측 일일 토큰 중앙값', footer: '로컬 관측 · 익명 집계', outside: '토큰 관측 범위 밖', tokenDays: '토큰 관측', lowerBound: '+ 하한', tokenUnit: '토큰', description: '최근 30일의 익명 Codex 활동.',
+  } : {
+    title: '30 days building with Codex', subtitle: 'Observed local activity · last 30 days', tokens: 'Observed tokens', sessions: 'Observed session starts', tools: 'Tool calls', active: 'Active days', chart: 'Daily token activity', insights: 'Activity insights', highestDay: 'Highest observed day', median: 'Median observed daily tokens', footer: 'Observed locally · anonymous aggregate', outside: 'outside token coverage', tokenDays: 'token days', lowerBound: '+ lower bound', tokenUnit: 'tokens', description: 'Anonymous Codex activity over the last 30 days.',
+  };
   const partial = activity.status === 'partial';
   const bounded = (value, formatter = number) => value === null ? '—' : `${formatter(value)}${partial ? '+' : ''}`;
   const knownTokens = activity.days.flatMap((day) => day.tokens === null ? [] : [day.tokens]);
+  const orderedTokens = [...knownTokens].sort((a, b) => a - b);
+  const middle = Math.floor(orderedTokens.length / 2);
+  const median = orderedTokens.length === 0 ? null : orderedTokens.length % 2 === 1 ? orderedTokens[middle] : Math.floor((orderedTokens[middle - 1] + orderedTokens[middle]) / 2);
   const observedMaximum = knownTokens.length === 0 ? null : Math.max(...knownTokens);
   const peakDay = observedMaximum === null ? null : activity.days.find((day) => day.tokens === observedMaximum) ?? null;
   const scaleMaximum = Math.max(1, observedMaximum ?? 0);
   const bars = activity.days.map((day, index) => {
     const x = 68 + index * 27;
-    if (day.tokens === null) return `<rect class="token-bar token-unknown" x="${x}" y="324" width="15" height="2" rx="1" fill="#8c959f" opacity=".28"/><title>${escapeXml(day.date)}: no observation</title>`;
+    if (day.tokens === null) return `<rect class="token-bar token-unknown" x="${x}" y="318" width="15" height="8" rx="3" fill="none" stroke="#8c959f" stroke-dasharray="2 2" opacity=".7"><title>${escapeXml(day.date)}: ${copy.outside}</title></rect>`;
     const height = Math.max(day.tokens === 0 ? 2 : 5, Math.round(day.tokens / scaleMaximum * 128));
     const lowerBound = day.coverage !== 'complete';
-    return `<rect class="token-bar" x="${x}" y="${326 - height}" width="15" height="${height}" rx="3" fill="#2f81f7"/><title>${escapeXml(day.date)}: ${compactNumber(day.tokens)}${lowerBound ? '+' : ''} tokens</title>`;
+    const tokenValue = lowerBound ? compactLowerBound(day.tokens, locale) : compactNumber(day.tokens);
+    return `<rect class="token-bar" x="${x}" y="${326 - height}" width="15" height="${height}" rx="3" fill="#2f81f7"><title>${escapeXml(day.date)}: ${tokenValue}${lowerBound ? '+' : ''} ${copy.tokenUnit}</title></rect>`;
   }).join('');
   const ticks = [0, 7, 14, 21, 29].map((index) => `<text x="${75.5 + index * 27}" y="348" font-size="9" text-anchor="middle" opacity=".62">${activity.days[index].date.slice(5)}</text>`).join('');
-  const boundedDays = (value) => value === null ? '—' : `${number(value)}d${partial ? '+' : ''}`;
-  const coverage = partial ? 'Values with a plus sign are observed lower bounds.' : activity.status === 'ready' ? 'Values cover the selected local activity window.' : 'Some local activity was not observed.';
+  const coverage = ko
+    ? `${knownTokens.length} / ${activity.days.length}일 ${copy.tokenDays}${partial ? ` · ${copy.lowerBound}` : ''}`
+    : `${knownTokens.length} / ${activity.days.length} ${copy.tokenDays}${partial ? ` · ${copy.lowerBound}` : ''}`;
+  const compact = (value) => compactLowerBound(value, locale);
   return `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="590" viewBox="0 0 900 590" role="img" aria-labelledby="title description">
-<title id="title">30 days building with Codex</title>
-<desc id="description">Anonymous Codex activity over the last 30 days. ${escapeXml(coverage)}</desc>
+<title id="title">${copy.title}</title>
+<desc id="description">${copy.description} ${escapeXml(coverage)}</desc>
 <defs><style>text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;fill:#1f2328}.grid,.divider{stroke:#d0d7de}@media(prefers-color-scheme:dark){text{fill:#e6edf3}.panel{fill:#0d1117;stroke:#30363d}.grid,.divider{stroke:#30363d}}</style></defs>
 <rect class="panel" x=".5" y=".5" width="899" height="589" rx="12" fill="#fff" stroke="#d0d7de"/>
-<text x="32" y="38" font-size="20" font-weight="600">30 days building with Codex</text>
-<text x="32" y="61" font-size="12" opacity=".68">Observed local activity · last 30 days</text>
-<text x="32" y="94" font-size="12" opacity=".68">Observed tokens</text><text x="32" y="124" font-size="25" font-weight="650">${bounded(activity.summary.totalTokens, compactNumber)}</text>
+<text x="32" y="38" font-size="20" font-weight="600">${copy.title}</text>
+<text x="32" y="61" font-size="12" opacity=".68">${copy.subtitle}</text>
+<text x="32" y="94" font-size="12" opacity=".68">${copy.tokens}</text><text x="32" y="124" font-size="25" font-weight="650">${bounded(activity.summary.totalTokens, compact)}</text>
 <line class="divider" x1="227" y1="84" x2="227" y2="132" opacity=".55"/>
-<text x="249" y="94" font-size="12" opacity=".68">New chats</text><text x="249" y="124" font-size="25" font-weight="650">${bounded(activity.summary.newChats)}</text>
+<text x="249" y="94" font-size="12" opacity=".68">${copy.sessions}</text><text x="249" y="124" font-size="25" font-weight="650">${bounded(activity.summary.newChats)}</text>
 <line class="divider" x1="444" y1="84" x2="444" y2="132" opacity=".55"/>
-<text x="466" y="94" font-size="12" opacity=".68">Tool calls</text><text x="466" y="124" font-size="25" font-weight="650">${bounded(activity.summary.toolCalls)}</text>
+<text x="466" y="94" font-size="12" opacity=".68">${copy.tools}</text><text x="466" y="124" font-size="25" font-weight="650">${bounded(activity.summary.toolCalls)}</text>
 <line class="divider" x1="661" y1="84" x2="661" y2="132" opacity=".55"/>
-<text x="683" y="94" font-size="12" opacity=".68">Active days</text><text x="683" y="124" font-size="25" font-weight="650">${activity.summary.activeDays === null ? '—' : `${number(activity.summary.activeDays)}d${partial ? '+' : ''}`}</text>
-<text x="32" y="174" font-size="14" font-weight="600">Daily token activity</text>
-<text x="680" y="174" font-size="10" opacity=".62">${escapeXml(activity.window.from)} — ${escapeXml(activity.window.to)}</text>
+<text x="683" y="94" font-size="12" opacity=".68">${copy.active}</text><text x="683" y="124" font-size="25" font-weight="650">${activity.summary.activeDays === null ? '—' : `${number(activity.summary.activeDays)} / ${activity.days.length}`}</text>
+<text x="32" y="174" font-size="14" font-weight="600">${copy.chart}</text>
+<text x="868" y="174" font-size="10" text-anchor="end" opacity=".62">${escapeXml(activity.window.from)} — ${escapeXml(activity.window.to)} · ${escapeXml(coverage)}</text>
 <line class="grid" x1="64" y1="198" x2="868" y2="198" opacity=".45"/><line class="grid" x1="64" y1="262" x2="868" y2="262" opacity=".28"/><line class="grid" x1="64" y1="326" x2="868" y2="326" opacity=".65"/>
-<text x="32" y="202" font-size="9" opacity=".58">${observedMaximum === null ? '—' : compactNumber(observedMaximum)}</text><text x="32" y="330" font-size="9" opacity=".58">0</text>
+<text x="32" y="202" font-size="9" opacity=".58">${observedMaximum === null ? '—' : compact(observedMaximum)}</text><text x="32" y="330" font-size="9" opacity=".58">0</text>
 ${bars}
 ${ticks}
 <line class="divider" x1="32" y1="382" x2="868" y2="382" opacity=".55"/>
-<text x="32" y="414" font-size="14" font-weight="600">Activity insights</text>
-<text x="32" y="446" font-size="12" font-weight="600" opacity=".82">Consistency</text>
-<text x="32" y="476" font-size="12" opacity=".68">Current streak</text><text x="350" y="476" font-size="18" font-weight="600">${boundedDays(activity.summary.currentStreakDays)}</text>
-<text x="32" y="518" font-size="12" opacity=".68">Longest streak</text><text x="350" y="518" font-size="18" font-weight="600">${boundedDays(activity.summary.longestStreakDays)}</text>
+<text x="32" y="414" font-size="14" font-weight="600">${copy.insights}</text>
+<text x="32" y="476" font-size="12" opacity=".68">${copy.highestDay}</text><text x="350" y="476" font-size="18" font-weight="600">${peakDay === null ? '—' : peakDay.date.slice(5)}</text>
 <line class="divider" x1="450" y1="430" x2="450" y2="526" opacity=".55"/>
-<text x="482" y="446" font-size="12" font-weight="600" opacity=".82">Peak activity</text>
-<text x="482" y="476" font-size="12" opacity=".68">Peak day</text><text x="760" y="476" font-size="18" font-weight="600">${peakDay === null ? '—' : peakDay.date.slice(5)}</text>
-<text x="482" y="518" font-size="12" opacity=".68">Peak observed tokens</text><text x="760" y="518" font-size="18" font-weight="600">${bounded(observedMaximum, compactNumber)}</text>
-<text x="32" y="568" font-size="10" opacity=".58">Observed locally · anonymous aggregate</text>
+<text x="482" y="476" font-size="12" opacity=".68">${copy.median}</text><text x="760" y="476" font-size="18" font-weight="600">${bounded(median, compact)}</text>
+<text x="32" y="568" font-size="10" opacity=".58">${copy.footer}</text>
 </svg>
 `;
 }
@@ -103,9 +122,10 @@ ${cells}
 `;
 }
 
-export function renderActivitySvg(input) {
+export function renderActivitySvg(input, locale = 'en') {
+  if (!['en', 'ko'].includes(locale)) throw new Error('unsupported locale');
   const activity = parsePublicActivity(input);
-  if (activity.schemaVersion === 3) return renderSurface(activity);
+  if (activity.schemaVersion === 3) return renderSurface(activity, locale);
   if (activity.schemaVersion === 2) return renderProfile(activity);
   const maximum = Math.max(1, ...activity.days.map((day) => day.toolCalls ?? 0));
   const bars = activity.days.map((day, index) => {

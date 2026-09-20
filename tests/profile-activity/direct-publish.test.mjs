@@ -40,6 +40,7 @@ async function repository() {
   await writeFile(path.join(repo, 'README.md'), 'keep\n');
   await writeFile(path.join(repo, 'metrics/codex-activity.json'), '{"old":true}\n');
   await writeFile(path.join(repo, 'assets/codex-activity.svg'), '<svg>old</svg>\n');
+  await writeFile(path.join(repo, 'assets/codex-activity-ko.svg'), '<svg>old ko</svg>\n');
   await run('git', ['-C', repo, 'add', '.']);
   await run('git', ['-C', repo, 'commit', '-m', 'seed']);
   await run('git', ['-C', repo, 'remote', 'add', 'origin', remote]);
@@ -104,6 +105,7 @@ test('owned collection publish preserves final files when peer is missing', asyn
   assert.equal(await remoteFile(fixture.remote, 'README.md'), 'keep\n');
   assert.equal(await remoteFile(fixture.remote, 'metrics/codex-activity.json'), '{"old":true}\n');
   assert.equal(await remoteFile(fixture.remote, 'assets/codex-activity.svg'), '<svg>old</svg>\n');
+  assert.equal(await remoteFile(fixture.remote, 'assets/codex-activity-ko.svg'), '<svg>old ko</svg>\n');
   assert.equal(await remoteFile(fixture.remote, 'metrics/codex-activity-macmini.json'), canonicalCollection(collection()));
   await assert.rejects(remoteFile(fixture.remote, 'metrics/codex-activity-macbook.json'));
 });
@@ -131,7 +133,7 @@ test('owned collection publish merges the current pair into deterministic final 
       const current = currentActivityCollections(values, day);
       if (current === null) return null;
       const activity = aggregateCollections(current, { asOfDate: day, referenceTime: '2026-09-13T09:00:00.000Z', staleAfterHours: 48 });
-      return { 'metrics/codex-activity.json': stableJson(activity), 'assets/codex-activity.svg': renderActivitySvg(activity) };
+      return { 'metrics/codex-activity.json': stableJson(activity), 'assets/codex-activity.svg': renderActivitySvg(activity), 'assets/codex-activity-ko.svg': renderActivitySvg(activity, 'ko') };
     },
   });
   assert.equal(result.status, 'published');
@@ -139,6 +141,7 @@ test('owned collection publish merges the current pair into deterministic final 
   assert.equal(final.schemaVersion, 3);
   assert.equal(final.aggregation, 'sum');
   assert.match(await remoteFile(fixture.remote, 'assets/codex-activity.svg'), /30 days building with Codex/);
+  assert.match(await remoteFile(fixture.remote, 'assets/codex-activity-ko.svg'), /Codex로 만든 30일/);
 });
 
 test('non-fast-forward retry rereads the peer collection before generating final files', async () => {
@@ -159,7 +162,7 @@ test('non-fast-forward retry rereads the peer collection before generating final
       const current = currentActivityCollections(values, day);
       if (current === null) return null;
       const activity = aggregateCollections(current, { asOfDate: day, referenceTime: '2026-09-13T09:00:00.000Z', staleAfterHours: 48 });
-      return { 'metrics/codex-activity.json': stableJson(activity), 'assets/codex-activity.svg': renderActivitySvg(activity) };
+      return { 'metrics/codex-activity.json': stableJson(activity), 'assets/codex-activity.svg': renderActivitySvg(activity), 'assets/codex-activity-ko.svg': renderActivitySvg(activity, 'ko') };
     },
   });
   assert.equal(result.status, 'published');

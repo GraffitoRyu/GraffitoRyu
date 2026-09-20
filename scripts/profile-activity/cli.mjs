@@ -85,6 +85,14 @@ async function loadRuntime() {
   ({ atomicWrite, readSnapshot, saveAndExportSnapshot } = await import('./snapshot.mjs'));
 }
 
+function generatedActivity(activity) {
+  return {
+    'metrics/codex-activity.json': stableJson(activity),
+    'assets/codex-activity.svg': renderActivitySvg(activity),
+    'assets/codex-activity-ko.svg': renderActivitySvg(activity, 'ko'),
+  };
+}
+
 function argumentsFor(argv) {
   const [command, ...rest] = argv;
   const configIndex = rest.indexOf('--config');
@@ -269,7 +277,7 @@ async function main() {
         if (current === null) return null;
         const activity = aggregateCollections(current, { asOfDate, referenceTime: now, staleAfterHours: config.staleAfterHours });
         if (!isPublishableActivity(activity)) return null;
-        return { 'metrics/codex-activity.json': stableJson(activity), 'assets/codex-activity.svg': renderActivitySvg(activity) };
+        return generatedActivity(activity);
       },
     });
     await atomicWrite(receiptFile, { schemaVersion: 1, date: asOfDate, collectedAt: snapshot.collectedAt }, config.stateDir);
@@ -280,7 +288,7 @@ async function main() {
   const snapshots = await publisherSnapshots(config);
   if (args.dryRun) {
     const { activity } = processActivitySurface(snapshots, { asOfDate, referenceTime: now, expectedSourceIds: config.expectedSources.map(({ sourceId }) => sourceId), independentSources: config.independentSources, staleAfterHours: config.staleAfterHours }, accountUsage);
-    const generated = { 'metrics/codex-activity.json': stableJson(activity), 'assets/codex-activity.svg': renderActivitySvg(activity) };
+    const generated = generatedActivity(activity);
     await publishGenerated(config, generated, { dryRun: true });
     stateChanged = 'unknown';
     await atomicWrite(path.join(config.stateDir, 'preview.json'), generated['metrics/codex-activity.json'], config.stateDir);
@@ -299,7 +307,7 @@ async function main() {
     publish: async (readySnapshots) => {
       const { activity } = processActivitySurface(readySnapshots, { asOfDate, referenceTime: now, expectedSourceIds: config.expectedSources.map(({ sourceId }) => sourceId), independentSources: config.independentSources, staleAfterHours: config.staleAfterHours }, accountUsage);
       if (!isPublishableActivity(activity)) throw new Error('aggregate unavailable');
-      return publishGeneratedUnlocked(config, { 'metrics/codex-activity.json': stableJson(activity), 'assets/codex-activity.svg': renderActivitySvg(activity) });
+      return publishGeneratedUnlocked(config, generatedActivity(activity));
     },
   });
   process.stdout.write(stableJson(result));

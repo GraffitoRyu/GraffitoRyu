@@ -24,7 +24,7 @@ node scripts/profile-activity/install-local.mjs --apply --config PRIVATE_CONFIG_
 
 Removal accepts only the installed private config and refuses a changed receipt, runtime, or unmanaged runtime file. Collector scheduling and publisher scheduling remain separate approvals.
 
-Actual config, private snapshots, cache, runtime receipts, and scheduler registration stay outside the repository. `probe` reports only field/type/event-kind counts. `collect --dry-run` reads the selected scope without persisting a snapshot. Only an approved installed device publisher may commit its owned anonymous collection and, when both collections are current and valid, the two final generated files.
+Actual config, private snapshots, cache, runtime receipts, and scheduler registration stay outside the repository. `probe` reports only field/type/event-kind counts. `collect --dry-run` reads the selected scope without persisting a snapshot. Only an approved installed device publisher may commit its owned anonymous collection and, when both collections are current and valid, the three final generated files.
 
 ## Direct repository publication
 
@@ -32,9 +32,9 @@ MacBook and Mac mini collect only their own local scopes on separate, non-overla
 
 The public collection schema contains only `schemaVersion`, a fixed metric scope, KST timezone, the exact 30-day window, and anonymous daily counters. It excludes private routing metadata including source or device ID, revision, policy label, collection timestamp, digest, paths, and task/session identity. The fixed filename and private installed config define ownership; the JSON does not serialize that binding.
 
-Each Git attempt fetches the newest target branch and creates a fresh detached candidate. The publisher writes only its owned collection, then strictly reads both canonical collection files from that candidate. When both match the current KST 30-day window and the merged activity is publishable, it regenerates `metrics/codex-activity.json` and `assets/codex-activity.svg`. Missing, malformed, wrong-window, or unavailable input leaves those final files byte-for-byte unchanged while still allowing the valid owned collection to advance.
+Each Git attempt fetches the newest target branch and creates a fresh detached candidate. The publisher writes only its owned collection, then strictly reads both canonical collection files from that candidate. When both match the current KST 30-day window and the merged activity is publishable, it regenerates `metrics/codex-activity.json`, `assets/codex-activity.svg`, and `assets/codex-activity-ko.svg`. Missing, malformed, wrong-window, or unavailable input leaves those final files byte-for-byte unchanged while still allowing the valid owned collection to advance.
 
-Non-fast-forward publication retries repeat the entire fetch, candidate, collection validation, merge, and render sequence, so a concurrent peer update is never overwritten by a stale final render. A device-local private lock prevents duplicate runs on one machine. The staged and committed path allowlist contains only the configured owned collection plus the two final generated files; README, source, the peer collection, and private state are refused. Pushes are bounded and never forced.
+Non-fast-forward publication retries repeat the entire fetch, candidate, collection validation, merge, and render sequence, so a concurrent peer update is never overwritten by a stale final render. A device-local private lock prevents duplicate runs on one machine. The staged and committed path allowlist contains only the configured owned collection plus the three final generated files; README, source, the peer collection, and private state are refused. Pushes are bounded and never forced.
 
 A failed state-changing request remains failed until the user directly approves a retry. Messages from another task are not retry authority. A successful publisher run is not repeated.
 

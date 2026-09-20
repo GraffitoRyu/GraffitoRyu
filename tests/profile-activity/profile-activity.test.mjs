@@ -110,7 +110,11 @@ async function publisherRepo() {
     repo,
     hooks,
     config: { role: 'publisher', stateDir: path.join(root, 'state'), publisher: { repoDir: repo, remote, branch: 'main', candidateRoot: path.join(root, 'candidates'), retryLimit: 2, hooksPath: hooks, hooksManifest: {} } },
-    generated: { 'metrics/codex-activity.json': '{}\n', 'assets/codex-activity.svg': '<svg xmlns="http://www.w3.org/2000/svg"/>\n' },
+    generated: {
+      'metrics/codex-activity.json': '{}\n',
+      'assets/codex-activity.svg': '<svg xmlns="http://www.w3.org/2000/svg"/>\n',
+      'assets/codex-activity-ko.svg': '<svg xmlns="http://www.w3.org/2000/svg"/>\n',
+    },
   };
 }
 
@@ -404,15 +408,16 @@ test('v3 renderer prioritizes four reliable public metrics', () => {
   const svg = renderActivitySvg(activity);
   assert.match(svg, /30 days building with Codex/);
   assert.match(svg, /Observed tokens/);
-  assert.match(svg, /New chats/);
+  assert.match(svg, /Observed session starts/);
   assert.match(svg, /Tool calls/);
   assert.match(svg, /Active days/);
-  assert.doesNotMatch(svg, /Max session|Longest chat|Session-days|Plugin calls|Browser\/web|Computer use|Other tools|Skill uses|Fast mode|Reasoning|Not observed|Unavailable/);
+  assert.match(svg, />30 \/ 30<\/text>/);
+  assert.doesNotMatch(svg, /New chats|Max session|Longest chat|Session-days|Plugin calls|Browser\/web|Computer use|Other tools|Skill uses|Fast mode|Reasoning|Not observed|Unavailable/);
   assert.doesNotMatch(svg, /11111111|22222222|PRIVATE|device|source|<script|foreignObject|(?:href|src)=|on[a-z]+=/i);
   assert.equal(svg, renderActivitySvg(activity));
 });
 
-test('v3 renderer keeps the approved lower insight section', () => {
+test('v3 renderer keeps only observed token insights', () => {
   const activity = aggregateSnapshots([
     makeV3Input({ sessions: 1, newChats: 1, calls: 4, tokens: 10 }),
     makeV3Input({ sourceId: SOURCE_B, sessions: 1, newChats: 1, calls: 4, tokens: 10 }),
@@ -423,14 +428,11 @@ test('v3 renderer keeps the approved lower insight section', () => {
 
   assert.match(svg, /height="590" viewBox="0 0 900 590"/);
   assert.match(svg, /Activity insights/);
-  assert.match(svg, /Consistency/);
-  assert.match(svg, /Current streak/);
-  assert.match(svg, /Longest streak/);
-  assert.match(svg, /Peak activity/);
-  assert.match(svg, /Peak day/);
-  assert.match(svg, /Peak observed tokens/);
+  assert.match(svg, /Highest observed day/);
+  assert.match(svg, /Median observed daily tokens/);
+  assert.doesNotMatch(svg, /Consistency|Current streak|Longest streak|Peak activity|Peak day|Peak observed tokens/);
   assert.match(svg, />08-19<\/text>/);
-  assert.match(svg, />99<\/text>/);
+  assert.match(svg, />20\+<\/text>/);
 });
 
 test('v3 renderer presents verified partial observations as quiet lower bounds', () => {
@@ -443,8 +445,9 @@ test('v3 renderer presents verified partial observations as quiet lower bounds',
 
   assert.match(svg, />300\+</);
   assert.match(svg, />120\+</);
-  assert.match(svg, />30d\+</);
+  assert.match(svg, />30 \/ 30<\/text>/);
   assert.match(svg, /10\+ tokens/);
+  assert.match(svg, /30 \/ 30 token days · \+ lower bound/);
   assert.doesNotMatch(svg, /≥|Partial values shown|Not observed|Unavailable/);
 
   const complete = renderActivitySvg(aggregateSnapshots([
@@ -495,6 +498,9 @@ test('v3 renderer distinguishes unknown, zero, partial, and ready token bars', (
 
   const partialSvg = renderActivitySvg(partial);
   assert.match(partialSvg, /class="token-bar token-unknown"/);
+  assert.match(partialSvg, /class="token-bar token-unknown"[^>]+fill="none"[^>]+stroke-dasharray="2 2"/);
+  assert.match(partialSvg, /class="token-bar token-unknown"[^>]*><title>[^<]+: outside token coverage<\/title><\/rect>/);
+  assert.match(partialSvg, /class="token-bar"[^>]*><title>[^<]+: 0\+ tokens<\/title><\/rect>/);
   assert.match(partialSvg, /10\+ tokens/);
   assert.doesNotMatch(partialSvg, /Partial values shown|≥/);
 
@@ -513,6 +519,27 @@ test('v3 renderer distinguishes unknown, zero, partial, and ready token bars', (
     makeV3Input({ sourceId: SOURCE_B, sessions: 1, calls: 1, tokens: 1, skillUses: 0, fastTurns: 0, modeTurns: 0, reasoning: { none: 0, low: 0, medium: 0, high: 0, xhigh: 0, other: 0 } }),
   ], options));
   assert.doesNotMatch(readySvg, /Partial values shown|≥|\+ tokens/);
+});
+
+test('v3 renderer floors lower-bound compact values and renders Korean copy', () => {
+  const activity = aggregateSnapshots([
+    makeV3Input({ sessions: 1, newChats: 1, calls: 4, tokens: 65_383_255 }),
+    makeV3Input({ sourceId: SOURCE_B }),
+  ], options);
+  activity.summary.totalTokens = 1_961_497_663;
+
+  const english = renderActivitySvg(activity);
+  const korean = renderActivitySvg(activity, 'ko');
+
+  assert.match(english, />1\.9B\+<\/text>/);
+  assert.doesNotMatch(english, />2B\+<\/text>/);
+  assert.match(korean, /Codex로 만든 30일/);
+  assert.match(korean, /관측 세션 시작/);
+  assert.match(korean, /가장 높은 관측일/);
+  assert.match(korean, /관측 일일 토큰 중앙값/);
+  assert.match(korean, />19\.6억\+<\/text>/);
+  assert.equal(korean, renderActivitySvg(activity, 'ko'));
+  assert.throws(() => renderActivitySvg(activity, 'fr'), /locale/);
 });
 
 test('account usage accepts only the exact sanitized private contract and joins once after device merge', async () => {
@@ -1276,7 +1303,7 @@ test('T30 a mismatched remote is rejected', async () => {
   await assert.rejects(validatePublisherTarget({ role: 'publisher', publisher: { repoDir: root, remote: 'other', hooksPath: '' } }));
 });
 
-test('T31 staged paths outside the two-file allowlist are rejected', () => {
+test('T31 staged paths outside the generated-file allowlist are rejected', () => {
   assert.doesNotThrow(() => assertAllowedPaths(['metrics/codex-activity.json']));
   assert.throws(() => assertAllowedPaths(['README.md']));
 });

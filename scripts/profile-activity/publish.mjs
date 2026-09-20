@@ -7,7 +7,7 @@ import { canonicalCollection, COLLECTION_PATHS, parseActivityCollection } from '
 import { atomicWrite, prepareWriteTarget } from './snapshot.mjs';
 
 const run = promisify(execFile);
-export const GENERATED_PATHS = ['assets/codex-activity.svg', 'metrics/codex-activity.json'];
+export const GENERATED_PATHS = ['assets/codex-activity.svg', 'assets/codex-activity-ko.svg', 'metrics/codex-activity.json'];
 
 async function git(repo, args) {
   const { stdout } = await run('git', ['-C', repo, ...args], { encoding: 'utf8' });
