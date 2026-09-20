@@ -140,7 +140,8 @@ async function main() {
   const { files, manifest, sourceCommit } = sourcePackage;
   const digest = digestManifest(manifest);
   if (args[0] === '--replace') {
-    if (config.role !== 'publisher' || config.launchAgent) throw new Error('publisher replacement required');
+    const collector = config.role === 'collector';
+    if (!config.publisher || collector !== Boolean(config.launchAgent)) throw new Error('publisher replacement required');
     const current = await validateInstallation(config, args[2]);
     const target = path.join(path.dirname(config.runtimeDir), digest);
     if (target === config.runtimeDir || await exists(target)) throw new Error('replacement target exists');
@@ -150,28 +151,55 @@ async function main() {
     const publisher = { ...config.publisher, hooksManifest: await capturePublisherHooks(config.publisher.repoDir) };
     const configTemp = `${current.installedConfigFile}.${process.pid}.tmp`;
     const receiptTemp = `${current.receiptFile}.${process.pid}.tmp`;
+    const plistTemp = collector ? `${config.launchAgent.plistFile}.${process.pid}.tmp` : null;
+    let oldPlist = null;
+    let newPlist = null;
+    let launchAgentDigest = null;
+    if (collector) {
+      oldPlist = await readFile(config.launchAgent.plistFile, 'utf8');
+      if (createHash('sha256').update(oldPlist).digest('hex') !== current.receipt.launchAgentDigest) throw new Error('launch agent receipt mismatch');
+      newPlist = collectorPlist({ label: config.launchAgent.label, nodeBinary: process.execPath, cli: path.join(target, 'cli.mjs'), configFile: current.installedConfigFile });
+      launchAgentDigest = createHash('sha256').update(newPlist).digest('hex');
+    }
     await mkdir(target, { recursive: false, mode: 0o700 });
     try {
       for (const name of Object.keys(manifest)) await writeFile(path.join(target, name), files[name], { flag: 'wx', mode: 0o600 });
       await writeFile(path.join(target, 'manifest.json'), stableJson(manifest), { flag: 'wx', mode: 0o600 });
       await verifyRuntimeManifest(target, manifest);
       const installedConfig = stableJson({ ...config, publisher, runtimeDir: target, runtimeManifest: manifest });
-      const receipt = stableJson({ schemaVersion: 1, role: config.role, sourceCommit, stateDir: config.stateDir, runtimeDir: target, runtimeDigest: digest, runtimeManifestDigest: digestManifest(manifest), installedConfigDigest: createHash('sha256').update(installedConfig).digest('hex'), nodeBinary: process.execPath, gitBinary, launchAgentLabel: null, launchAgentDigest: null, registration: 'not-created' });
+      const receipt = (registration) => stableJson({ schemaVersion: 1, role: config.role, sourceCommit, stateDir: config.stateDir, runtimeDir: target, runtimeDigest: digest, runtimeManifestDigest: digestManifest(manifest), installedConfigDigest: createHash('sha256').update(installedConfig).digest('hex'), nodeBinary: process.execPath, gitBinary, launchAgentLabel: collector ? config.launchAgent.label : null, launchAgentDigest, registration });
       await writeFile(configTemp, installedConfig, { flag: 'wx', mode: 0o600 });
-      await writeFile(receiptTemp, receipt, { flag: 'wx', mode: 0o600 });
+      await writeFile(receiptTemp, receipt(collector ? 'pending' : 'not-created'), { flag: 'wx', mode: 0o600 });
+      if (collector) await writeFile(plistTemp, newPlist, { flag: 'wx', mode: 0o600 });
+      let stopped = false;
       try {
+        if (collector) {
+          await run('/bin/launchctl', ['bootout', `gui/${process.getuid()}/${config.launchAgent.label}`]);
+          stopped = true;
+        }
         await rename(configTemp, current.installedConfigFile);
         await rename(receiptTemp, current.receiptFile);
+        if (collector) {
+          await rename(plistTemp, config.launchAgent.plistFile);
+          await run('/bin/launchctl', ['bootstrap', `gui/${process.getuid()}`, config.launchAgent.plistFile]);
+          await writeFile(current.receiptFile, receipt('active'), { mode: 0o600 });
+        }
       } catch (error) {
         await writeFile(current.installedConfigFile, current.installedConfig, { mode: 0o600 });
         await writeFile(current.receiptFile, stableJson(current.receipt), { mode: 0o600 });
+        if (collector) {
+          await writeFile(config.launchAgent.plistFile, oldPlist, { mode: 0o600 });
+          if (stopped) await run('/bin/launchctl', ['bootstrap', `gui/${process.getuid()}`, config.launchAgent.plistFile]).catch(() => {});
+        }
         await unlink(configTemp).catch(() => {});
         await unlink(receiptTemp).catch(() => {});
+        if (plistTemp) await unlink(plistTemp).catch(() => {});
         throw error;
       }
     } catch (error) {
       await unlink(configTemp).catch(() => {});
       await unlink(receiptTemp).catch(() => {});
+      if (plistTemp) await unlink(plistTemp).catch(() => {});
       const entries = await readdir(target).catch(() => []);
       for (const name of entries) await unlink(path.join(target, name)).catch(() => {});
       await rmdir(target).catch(() => {});
@@ -179,7 +207,7 @@ async function main() {
     }
     let cleanup = 'complete';
     try { await removeRuntime(config); } catch { cleanup = 'pending'; }
-    process.stdout.write(stableJson({ status: 'runtime-replaced', registration: 'not-created', cleanup }));
+    process.stdout.write(stableJson({ status: 'runtime-replaced', registration: collector ? 'active' : 'not-created', cleanup }));
     return;
   }
   if (config.role === 'collector' && !config.launchAgent) throw new Error('collector launchAgent required');
