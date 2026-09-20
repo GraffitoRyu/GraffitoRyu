@@ -1006,25 +1006,67 @@ test('T43 fork token baseline excludes copied parent usage', async () => {
   assert.equal(day.maxSessionTokens, 100);
 });
 
-test('T46 legacy collector caches are rebuilt for profile metrics', async () => {
+test('T43 unknown fork inheritance stays inside affected metric groups', async () => {
+  const records = [
+    { timestamp: '2026-09-12T00:00:00Z', type: 'session_meta', payload: { id: 'child', parent_thread_id: 'parent', cwd: '/work/project' } },
+    tokenCount('2026-09-12T00:01:00Z', 100, 1),
+    message('2026-09-12T00:02:00Z'),
+    call('2026-09-12T00:03:00Z', 'call-a'),
+    { timestamp: '2026-09-12T00:04:00Z', type: 'event_msg', payload: { type: 'skill_use', skill_name: 'synthetic' } },
+  ];
+  const result = await collectFiles({ 'child.jsonl': records.map((value) => JSON.stringify(value)).join('\n') + '\n' });
+  assert.deepEqual(
+    [result.days[0].activeSessions, result.days[0].toolCalls, result.days[0].tokens, result.days[0].skillUses],
+    [null, null, null, null],
+  );
+  assert.deepEqual(
+    [result.days[1].activeSessions, result.days[1].toolCalls, result.days[1].tokens],
+    [0, 0, 0],
+  );
+});
+
+test('T46 legacy broad-unknown collector caches are rebuilt for metric-scoped state', async () => {
   const root = await temp();
-  await writeFile(path.join(root, 'a.jsonl'), rolloutLines({ events: [tokenCount('2026-09-12T00:02:00Z', 100, 1)] }));
+  await writeFile(path.join(root, 'a.jsonl'), rolloutLines({ events: [message('2026-09-12T00:01:00Z'), call('2026-09-12T00:02:00Z', 'a'), tokenCount('2026-09-12T00:03:00Z', 100, 1)] }));
   const first = await collectLogRoots({ logRoots: [root], from: '2026-09-12', to: '2026-09-13' });
   const legacyCache = structuredClone(first.cache);
   for (const state of Object.values(legacyCache.files)) {
-    delete state.cacheVersion;
+    state.cacheVersion = 3;
+    state.unknownDates = ['2026-09-12'];
     state.events = state.events.filter((event) => event.kind !== 'tokens');
   }
   const rebuilt = await collectLogRoots({ logRoots: [root], from: '2026-09-12', to: '2026-09-13', cache: legacyCache });
   assert.equal(rebuilt.days[0].tokens, 100);
+  assert.equal(rebuilt.days[0].toolCalls, 1);
+  assert.equal(rebuilt.days[0].activeSessions, 1);
+  assert.equal(Object.hasOwn(Object.values(rebuilt.cache.files)[0], 'unknownDates'), false);
 });
 
-test('T47 malformed token telemetry makes its day unknown', async () => {
+test('T47 malformed token telemetry only makes token metrics unknown', async () => {
   const malformed = tokenCount('2026-09-12T00:02:00Z', 100, 1);
   malformed.payload.info.total_token_usage.total_tokens = '100';
-  const day = (await collectFiles({ 'a.jsonl': rolloutLines({ events: [malformed] }) })).days[0];
+  const day = (await collectFiles({ 'a.jsonl': rolloutLines({ events: [malformed, call('2026-09-12T00:03:00Z', 'a')] }) })).days[0];
   assert.equal(day.tokens, null);
-  assert.equal(day.coverage, 'unknown');
+  assert.equal(day.maxSessionTokens, null);
+  assert.equal(day.activeSessions, 1);
+  assert.equal(day.newChats, 1);
+  assert.equal(day.toolCalls, 1);
+  assert.notEqual(day.longestSessionMinutes, null);
+  assert.equal(day.coverage, 'partial');
+});
+
+test('T47 missing tool call identity only makes tool metrics unknown', async () => {
+  const missingId = call('2026-09-12T00:02:00Z', 'unused');
+  delete missingId.payload.call_id;
+  const day = (await collectFiles({ 'a.jsonl': rolloutLines({ events: [message('2026-09-12T00:01:00Z'), missingId, tokenCount('2026-09-12T00:03:00Z', 100, 1)] }) })).days[0];
+  assert.equal(day.toolCalls, null);
+  assert.equal(day.pluginCalls, null);
+  assert.equal(day.activeSessions, 1);
+  assert.equal(day.newChats, 1);
+  assert.equal(day.tokens, 100);
+  assert.equal(day.maxSessionTokens, 100);
+  assert.notEqual(day.longestSessionMinutes, null);
+  assert.equal(day.coverage, 'partial');
 });
 
 test('T47 partial coverage recovers after malformed dated records leave the window', async () => {
