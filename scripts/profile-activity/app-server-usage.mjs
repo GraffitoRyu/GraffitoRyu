@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import readline from 'node:readline';
-import { parseAccountTokenUsage } from './account-activity.mjs';
+import { parsePublicActivity } from './contract.mjs';
 
 const SUMMARY_KEYS = ['lifetimeTokens', 'peakDailyTokens', 'longestRunningTurnSec', 'currentStreakDays', 'longestStreakDays'];
 
@@ -16,7 +16,7 @@ export function sanitizeAccountUsageResponse(result, window) {
   const days = result.dailyUsageBuckets
     .filter((day) => day?.startDate >= window.from && day.startDate <= window.to)
     .map((day) => ({ date: day.startDate, tokens: count(day.tokens, 'daily tokens') }));
-  return parseAccountTokenUsage({ readSucceeded: true, window, definition: 'chatgpt-account-token-activity', refreshCadence: null, localComparable: false, automatedCollection: true, summary, days });
+  return parsePublicActivity({ schemaVersion: 6, metricScope: 'codex-account-token-activity', timezone: 'Asia/Seoul', window, asOfDate: window.to, summary, days });
 }
 
 export function readAccountTokenUsage({ codexBinary, window, timeoutMs = 30000 }) {

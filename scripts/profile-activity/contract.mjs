@@ -1,33 +1,14 @@
-import { parseAccountActivity, parseAccountTokenUsage } from './account-activity.mjs';
+const ROOT_KEYS = ['schemaVersion', 'metricScope', 'timezone', 'window', 'asOfDate', 'summary', 'days'];
+const SUMMARY_KEYS = ['lifetimeTokens', 'peakDailyTokens', 'longestRunningTurnSec', 'currentStreakDays', 'longestStreakDays'];
 
-const PRIVATE_KEYS = ['schemaVersion', 'sourceId', 'revision', 'policyId', 'collectedAt', 'timezone', 'window', 'days'];
-const PRIVATE_V3_KEYS = PRIVATE_KEYS.filter((key) => key !== 'sourceId');
-const PUBLIC_KEYS = ['schemaVersion', 'metricScope', 'timezone', 'window', 'asOfDate', 'completeThroughDate', 'status', 'summary', 'days'];
-const PROFILE_PUBLIC_KEYS = [...PUBLIC_KEYS, 'aggregation'];
-const EVIDENCE_PUBLIC_KEYS = [...PROFILE_PUBLIC_KEYS, 'accountActivity'];
-const TOKEN_EVIDENCE_PUBLIC_KEYS = [...PROFILE_PUBLIC_KEYS, 'accountTokenUsage'];
-const DAY_KEYS = ['date', 'active', 'activeSessions', 'toolCalls', 'coverage'];
-const PROFILE_DAY_KEYS = [...DAY_KEYS, 'tokens', 'maxSessionTokens', 'longestSessionMinutes'];
-const SURFACE_DAY_KEYS = [...PROFILE_DAY_KEYS, 'newChats', 'pluginCalls', 'browserCalls', 'computerUseCalls', 'otherToolCalls', 'skillUses', 'fastTurns', 'modeTurns', 'reasoningTurns', 'reasoning'];
-const REASONING_KEYS = ['none', 'low', 'medium', 'high', 'xhigh', 'other'];
-const WINDOW_KEYS = ['from', 'to'];
-const SUMMARY_KEYS = ['activeDays', 'sessionDays', 'toolCalls'];
-const PROFILE_SUMMARY_KEYS = [...SUMMARY_KEYS, 'totalTokens', 'maxSessionTokens', 'longestSessionMinutes', 'currentStreakDays', 'longestStreakDays'];
-const SURFACE_PUBLIC_DAY_KEYS = [...PROFILE_DAY_KEYS, 'newChats', 'pluginCalls', 'browserCalls', 'computerUseCalls', 'otherToolCalls', 'skillUses', 'fastModePercent', 'reasoningPercent'];
-const SURFACE_SUMMARY_KEYS = [...PROFILE_SUMMARY_KEYS, 'newChats', 'pluginCalls', 'browserCalls', 'computerUseCalls', 'otherToolCalls', 'skillUses', 'fastModePercent', 'reasoningPercent'];
-const COVERAGE = new Set(['complete', 'partial', 'unknown']);
-
-function object(value, name) {
+function exactKeys(value, expected, name) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`invalid ${name}`);
-  return value;
+  if (Object.keys(value).sort().join(',') !== [...expected].sort().join(',')) throw new Error(`invalid ${name} keys`);
 }
 
-function exactKeys(value, keys, name) {
-  const actual = Object.keys(object(value, name)).sort();
-  const expected = [...keys].sort();
-  if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) {
-    throw new Error(`invalid ${name} keys`);
-  }
+function count(value, name) {
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`invalid ${name}`);
+  return value;
 }
 
 export function parseDate(value, name = 'date') {
@@ -43,136 +24,29 @@ export function addDays(date, amount) {
   return value.toISOString().slice(0, 10);
 }
 
-function nullableCount(value, name) {
-  if (value === null) return null;
-  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`invalid ${name}`);
-  return value;
-}
-
-function nullablePercentage(value, name) {
-  if (value === null) return null;
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 100) throw new Error(`invalid ${name}`);
-  return value;
-}
-
-function reasoningPercent(value, name) {
-  if (value === null) return null;
-  exactKeys(value, REASONING_KEYS, name);
-  return Object.fromEntries(REASONING_KEYS.map((key) => [key, nullablePercentage(value[key], `${name}.${key}`)]));
-}
-
 function parseWindow(value) {
-  exactKeys(value, WINDOW_KEYS, 'window');
-  const from = parseDate(value.from, 'window.from');
-  const to = parseDate(value.to, 'window.to');
-  if (from > to) throw new Error('invalid window order');
-  return { from, to };
-}
-
-function parseDays(value, window, schemaVersion = 1) {
-  if (!Array.isArray(value)) throw new Error('invalid days');
-  const expectedLength = Math.round((new Date(`${window.to}T00:00:00Z`) - new Date(`${window.from}T00:00:00Z`)) / 86400000) + 1;
-  if (value.length !== expectedLength) throw new Error('incomplete days window');
-  return value.map((day, index) => {
-    const profile = schemaVersion >= 2;
-    exactKeys(day, schemaVersion === 3 ? SURFACE_DAY_KEYS : profile ? PROFILE_DAY_KEYS : DAY_KEYS, 'day');
-    const date = parseDate(day.date);
-    if (date !== addDays(window.from, index)) throw new Error('days must be contiguous');
-    if (day.active !== null && typeof day.active !== 'boolean') throw new Error('invalid active');
-    const activeSessions = nullableCount(day.activeSessions, 'activeSessions');
-    const toolCalls = nullableCount(day.toolCalls, 'toolCalls');
-    if (!COVERAGE.has(day.coverage)) throw new Error('invalid coverage');
-    if (day.coverage === 'unknown' && (day.active !== null || activeSessions !== null || toolCalls !== null)) throw new Error('unknown day has values');
-    if (!profile) return { date, active: day.active, activeSessions, toolCalls, coverage: day.coverage };
-    const tokens = nullableCount(day.tokens, 'tokens');
-    const maxSessionTokens = nullableCount(day.maxSessionTokens, 'maxSessionTokens');
-    const longestSessionMinutes = nullableCount(day.longestSessionMinutes, 'longestSessionMinutes');
-    if (day.coverage === 'unknown' && [tokens, maxSessionTokens, longestSessionMinutes].some((item) => item !== null)) throw new Error('unknown day has profile values');
-    if (schemaVersion !== 3) return { date, active: day.active, activeSessions, toolCalls, tokens, maxSessionTokens, longestSessionMinutes, coverage: day.coverage };
-    const counts = Object.fromEntries(['newChats', 'pluginCalls', 'browserCalls', 'computerUseCalls', 'otherToolCalls', 'skillUses', 'fastTurns', 'modeTurns', 'reasoningTurns'].map((key) => [key, nullableCount(day[key], key)]));
-    const toolFamilies = [counts.pluginCalls, counts.browserCalls, counts.computerUseCalls, counts.otherToolCalls];
-    if (toolCalls !== null && toolFamilies.every((count) => count !== null) && toolFamilies.reduce((sum, count) => sum + count, 0) !== toolCalls) throw new Error('invalid toolCalls partition');
-    if (counts.newChats !== null && activeSessions !== null && counts.newChats > activeSessions) throw new Error('invalid newChats');
-    if ((counts.fastTurns === null) !== (counts.modeTurns === null) || counts.fastTurns !== null && counts.fastTurns > counts.modeTurns) throw new Error('invalid fastTurns denominator');
-    let reasoning = null;
-    if (day.reasoning !== null) {
-      exactKeys(day.reasoning, REASONING_KEYS, 'reasoning');
-      reasoning = Object.fromEntries(REASONING_KEYS.map((key) => [key, nullableCount(day.reasoning[key], `reasoning.${key}`)]));
-      if (Object.values(reasoning).some((count) => count === null)) throw new Error('invalid reasoning count');
-    }
-    if ((counts.reasoningTurns === null) !== (reasoning === null) || reasoning && counts.reasoningTurns !== Object.values(reasoning).reduce((sum, count) => sum + count, 0)) throw new Error('invalid reasoningTurns denominator');
-    if (day.coverage === 'unknown' && [...Object.values(counts), reasoning].some((item) => item !== null)) throw new Error('unknown day has surface values');
-    return { date, active: day.active, activeSessions, newChats: counts.newChats, toolCalls, pluginCalls: counts.pluginCalls, browserCalls: counts.browserCalls, computerUseCalls: counts.computerUseCalls, otherToolCalls: counts.otherToolCalls, skillUses: counts.skillUses, tokens, maxSessionTokens, longestSessionMinutes, fastTurns: counts.fastTurns, modeTurns: counts.modeTurns, reasoningTurns: counts.reasoningTurns, reasoning, coverage: day.coverage };
-  });
-}
-
-function parseSurfacePublicDays(value, window) {
-  if (!Array.isArray(value) || value.length !== 30) throw new Error('incomplete days window');
-  return value.map((day, index) => {
-    exactKeys(day, SURFACE_PUBLIC_DAY_KEYS, 'day');
-    const date = parseDate(day.date);
-    if (date !== addDays(window.from, index)) throw new Error('days must be contiguous');
-    if (day.active !== null && typeof day.active !== 'boolean') throw new Error('invalid active');
-    if (!COVERAGE.has(day.coverage)) throw new Error('invalid coverage');
-    const counts = Object.fromEntries(['activeSessions', 'newChats', 'toolCalls', 'pluginCalls', 'browserCalls', 'computerUseCalls', 'otherToolCalls', 'skillUses', 'tokens', 'maxSessionTokens', 'longestSessionMinutes'].map((key) => [key, nullableCount(day[key], key)]));
-    const fastModePercent = nullablePercentage(day.fastModePercent, 'fastModePercent');
-    const parsedReasoning = reasoningPercent(day.reasoningPercent, 'reasoningPercent');
-    if (day.coverage === 'unknown' && [day.active, ...Object.values(counts), fastModePercent, parsedReasoning].some((item) => item !== null)) throw new Error('unknown day has values');
-    return { date, active: day.active, ...counts, fastModePercent, reasoningPercent: parsedReasoning, coverage: day.coverage };
-  });
-}
-
-export function parsePrivateSnapshot(value) {
-  object(value, 'private snapshot');
-  if (![1, 2, 3].includes(value.schemaVersion)) throw new Error('unsupported private schema');
-  exactKeys(value, value.schemaVersion === 3 ? PRIVATE_V3_KEYS : PRIVATE_KEYS, 'private snapshot');
-  if (value.schemaVersion !== 3 && (typeof value.sourceId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.sourceId))) throw new Error('invalid sourceId');
-  if (!Number.isSafeInteger(value.revision) || value.revision < 1) throw new Error('invalid revision');
-  if (value.policyId !== 'local-codex-v1-kst-exclude-profile') throw new Error('invalid policyId');
-  if (value.timezone !== 'Asia/Seoul') throw new Error('invalid timezone');
-  if (typeof value.collectedAt !== 'string' || Number.isNaN(Date.parse(value.collectedAt))) throw new Error('invalid collectedAt');
-  const window = parseWindow(value.window);
-  if (value.schemaVersion === 3 && addDays(window.from, 29) !== window.to) throw new Error('private v3 window must contain 30 days');
-  const days = parseDays(value.days, window, value.schemaVersion);
-  return { schemaVersion: value.schemaVersion, ...(value.schemaVersion === 3 ? {} : { sourceId: value.sourceId }), revision: value.revision, policyId: value.policyId, collectedAt: new Date(value.collectedAt).toISOString(), timezone: value.timezone, window, days };
+  exactKeys(value, ['from', 'to'], 'window');
+  const window = { from: parseDate(value.from), to: parseDate(value.to) };
+  if (addDays(window.from, 29) !== window.to) throw new Error('window must contain 30 days');
+  return window;
 }
 
 export function parsePublicActivity(value) {
-  const legacyEvidence = value?.schemaVersion === 4;
-  const tokenEvidence = value?.schemaVersion === 5;
-  const evidence = legacyEvidence || tokenEvidence;
-  const profile = [2, 3, 4, 5].includes(value?.schemaVersion);
-  const surface = [3, 4, 5].includes(value?.schemaVersion);
-  exactKeys(value, tokenEvidence ? TOKEN_EVIDENCE_PUBLIC_KEYS : legacyEvidence ? EVIDENCE_PUBLIC_KEYS : profile ? PROFILE_PUBLIC_KEYS : PUBLIC_KEYS, 'public activity');
-  const metricScope = evidence ? 'codex-activity-evidence' : 'observed-local-codex';
-  if (![1, 2, 3, 4, 5].includes(value.schemaVersion) || value.metricScope !== metricScope || value.timezone !== 'Asia/Seoul') throw new Error('invalid public identity');
+  exactKeys(value, ROOT_KEYS, 'public activity');
+  if (value.schemaVersion !== 6 || value.metricScope !== 'codex-account-token-activity' || value.timezone !== 'Asia/Seoul') throw new Error('invalid public identity');
   const window = parseWindow(value.window);
-  if (addDays(window.from, 29) !== window.to) throw new Error('public window must contain 30 days');
-  const asOfDate = parseDate(value.asOfDate, 'asOfDate');
-  if (asOfDate !== window.to) throw new Error('asOfDate must equal window.to');
-  const completeThroughDate = value.completeThroughDate === null ? null : parseDate(value.completeThroughDate, 'completeThroughDate');
-  if (completeThroughDate && (completeThroughDate < window.from || completeThroughDate > window.to)) throw new Error('invalid completeThroughDate range');
-  if (!new Set(['ready', 'partial', 'unavailable']).has(value.status)) throw new Error('invalid status');
-  exactKeys(value.summary, surface ? SURFACE_SUMMARY_KEYS : profile ? PROFILE_SUMMARY_KEYS : SUMMARY_KEYS, 'summary');
-  const summary = {
-    activeDays: nullableCount(value.summary.activeDays, 'summary.activeDays'),
-    sessionDays: nullableCount(value.summary.sessionDays, 'summary.sessionDays'),
-    toolCalls: nullableCount(value.summary.toolCalls, 'summary.toolCalls'),
-  };
-  if (profile) {
-    if (!['sum', 'lower-bound'].includes(value.aggregation)) throw new Error('invalid aggregation');
-    for (const key of PROFILE_SUMMARY_KEYS.slice(3)) summary[key] = nullableCount(value.summary[key], `summary.${key}`);
-  }
-  if (surface) {
-    for (const key of ['newChats', 'pluginCalls', 'browserCalls', 'computerUseCalls', 'otherToolCalls', 'skillUses']) summary[key] = nullableCount(value.summary[key], `summary.${key}`);
-    summary.fastModePercent = nullablePercentage(value.summary.fastModePercent, 'summary.fastModePercent');
-    summary.reasoningPercent = reasoningPercent(value.summary.reasoningPercent, 'summary.reasoningPercent');
-  }
-  return { schemaVersion: value.schemaVersion, metricScope: value.metricScope, timezone: value.timezone, window, asOfDate, completeThroughDate, status: value.status, ...(profile && { aggregation: value.aggregation }), ...(legacyEvidence && { accountActivity: parseAccountActivity(value.accountActivity) }), ...(tokenEvidence && { accountTokenUsage: parseAccountTokenUsage(value.accountTokenUsage) }), summary, days: surface ? parseSurfacePublicDays(value.days, window) : parseDays(value.days, window, value.schemaVersion) };
-}
-
-export function isPublishableActivity(value) {
-  return parsePublicActivity(value).status !== 'unavailable';
+  if (parseDate(value.asOfDate, 'asOfDate') !== window.to) throw new Error('asOfDate must equal window.to');
+  exactKeys(value.summary, SUMMARY_KEYS, 'summary');
+  const summary = Object.fromEntries(SUMMARY_KEYS.map((key) => [key, count(value.summary[key], `summary.${key}`)]));
+  if (!Array.isArray(value.days) || value.days.length !== 30) throw new Error('days must contain 30 entries');
+  const days = value.days.map((day, index) => {
+    exactKeys(day, ['date', 'tokens'], 'day');
+    const date = parseDate(day.date);
+    if (date !== addDays(window.from, index)) throw new Error('days must be contiguous');
+    return { date, tokens: count(day.tokens, 'day.tokens') };
+  });
+  if (days.some(({ tokens }) => tokens > summary.peakDailyTokens)) throw new Error('peak daily tokens mismatch');
+  return { schemaVersion: 6, metricScope: value.metricScope, timezone: value.timezone, window, asOfDate: value.asOfDate, summary, days };
 }
 
 export function stableJson(value) {

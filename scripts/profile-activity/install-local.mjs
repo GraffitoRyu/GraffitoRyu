@@ -12,18 +12,7 @@ import { capturePublisherHooks, verifyRuntimeManifest } from './publish.mjs';
 const sourceDir = path.dirname(fileURLToPath(import.meta.url));
 const run = promisify(execFile);
 
-async function workingSourcePackage() {
-  const manifest = {};
-  const files = {};
-  for (const name of (await readdir(sourceDir)).filter((name) => name.endsWith('.mjs')).sort()) {
-    const content = await readFile(path.join(sourceDir, name));
-    files[name] = content;
-    manifest[name] = createHash('sha256').update(content).digest('hex');
-  }
-  return { files, manifest };
-}
-
-async function committedSourcePackage(requestedCommit) {
+async function sourcePackage(requestedCommit) {
   if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(requestedCommit)) throw new Error('full source commit required');
   const repo = (await run('git', ['-C', sourceDir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' })).stdout.trim();
   const sourceCommit = (await run('git', ['-C', repo, 'rev-parse', '--verify', `${requestedCommit}^{commit}`], { encoding: 'utf8' })).stdout.trim();
@@ -33,14 +22,14 @@ async function committedSourcePackage(requestedCommit) {
   const entries = listing.split('\0').filter(Boolean).map((line) => {
     const match = /^(100644|100755) blob [0-9a-f]+\t(.+)$/.exec(line);
     if (!match) throw new Error('invalid source tree entry');
-    return { mode: match[1], file: match[2] };
-  }).filter(({ file }) => path.posix.dirname(file) === prefix && file.endsWith('.mjs')).sort((a, b) => a.file.localeCompare(b.file));
+    return match[2];
+  }).filter((file) => path.posix.dirname(file) === prefix && file.endsWith('.mjs')).sort();
   if (entries.length === 0) throw new Error('source commit has no runtime files');
   const files = {};
   const manifest = {};
-  for (const entry of entries) {
-    const name = path.posix.basename(entry.file);
-    const content = (await run('git', ['-C', repo, 'show', `${sourceCommit}:${entry.file}`], { encoding: 'buffer', maxBuffer: 4 * 1024 * 1024 })).stdout;
+  for (const file of entries) {
+    const name = path.posix.basename(file);
+    const content = (await run('git', ['-C', repo, 'show', `${sourceCommit}:${file}`], { encoding: 'buffer', maxBuffer: 4 * 1024 * 1024 })).stdout;
     files[name] = content;
     manifest[name] = createHash('sha256').update(content).digest('hex');
   }
@@ -49,22 +38,6 @@ async function committedSourcePackage(requestedCommit) {
 
 function digestManifest(manifest) {
   return createHash('sha256').update(stableJson(manifest)).digest('hex');
-}
-
-function xml(value) {
-  return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-}
-
-export function collectorPlist({ label, nodeBinary, cli, configFile }) {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>Label</key><string>${xml(label)}</string>
-<key>ProgramArguments</key><array><string>${xml(nodeBinary)}</string><string>${xml(cli)}</string><string>collect</string><string>--config</string><string>${xml(configFile)}</string></array>
-<key>RunAtLoad</key><true/><key>StartInterval</key><integer>900</integer>
-<key>StandardOutPath</key><string>/dev/null</string><key>StandardErrorPath</key><string>/dev/null</string>
-</dict></plist>
-`;
 }
 
 async function exists(file) {
@@ -77,41 +50,35 @@ async function validateInstallation(config, configFile) {
   if (path.resolve(configFile) !== installedConfigFile) throw new Error('installed config required');
   const installedConfig = await readFile(installedConfigFile, 'utf8');
   const receipt = JSON.parse(await readFile(receiptFile, 'utf8'));
-  const runtimeManifestDigest = digestManifest(config.runtimeManifest);
-  if (receipt.schemaVersion !== 1 || receipt.role !== config.role || receipt.stateDir !== config.stateDir || receipt.runtimeDir !== config.runtimeDir || receipt.runtimeDigest !== path.basename(config.runtimeDir) || receipt.runtimeDigest !== runtimeManifestDigest || receipt.runtimeManifestDigest !== runtimeManifestDigest || receipt.installedConfigDigest !== createHash('sha256').update(installedConfig).digest('hex') || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(receipt.sourceCommit)) throw new Error('installation receipt mismatch');
+  const runtimeDigest = digestManifest(config.runtimeManifest);
+  if (receipt.schemaVersion !== 2 || receipt.stateDir !== config.stateDir || receipt.runtimeDir !== config.runtimeDir || receipt.runtimeDigest !== runtimeDigest || receipt.installedConfigDigest !== createHash('sha256').update(installedConfig).digest('hex') || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(receipt.sourceCommit)) throw new Error('installation receipt mismatch');
   await verifyRuntimeManifest(config.runtimeDir, config.runtimeManifest);
   return { installedConfig, installedConfigFile, receipt, receiptFile };
 }
 
 async function removeRuntime(config) {
-  const ownedRuntimeFiles = new Set([...Object.keys(config.runtimeManifest), 'manifest.json']);
-  const runtimeEntries = await readdir(config.runtimeDir);
-  if (runtimeEntries.length !== ownedRuntimeFiles.size || runtimeEntries.some((name) => !ownedRuntimeFiles.has(name))) throw new Error('runtime contains unmanaged files');
-  const installedManifest = JSON.parse(await readFile(path.join(config.runtimeDir, 'manifest.json'), 'utf8'));
-  if (stableJson(installedManifest) !== stableJson(config.runtimeManifest)) throw new Error('installed manifest mismatch');
-  for (const name of Object.keys(config.runtimeManifest)) await unlink(path.join(config.runtimeDir, name));
-  await unlink(path.join(config.runtimeDir, 'manifest.json'));
+  const owned = new Set([...Object.keys(config.runtimeManifest), 'manifest.json']);
+  const entries = await readdir(config.runtimeDir);
+  if (entries.length !== owned.size || entries.some((name) => !owned.has(name))) throw new Error('runtime contains unmanaged files');
+  for (const name of entries) await unlink(path.join(config.runtimeDir, name));
   await rmdir(config.runtimeDir);
+}
+
+async function writeRuntime(target, files, manifest) {
+  await mkdir(target, { recursive: false, mode: 0o700 });
+  for (const name of Object.keys(manifest)) await writeFile(path.join(target, name), files[name], { flag: 'wx', mode: 0o600 });
+  await writeFile(path.join(target, 'manifest.json'), stableJson(manifest), { flag: 'wx', mode: 0o600 });
+  await verifyRuntimeManifest(target, manifest);
+}
+
+function receipt({ sourceCommit, stateDir, runtimeDir, runtimeDigest, installedConfig, gitBinary }) {
+  return stableJson({ schemaVersion: 2, sourceCommit, stateDir, runtimeDir, runtimeDigest, installedConfigDigest: createHash('sha256').update(installedConfig).digest('hex'), nodeBinary: process.execPath, gitBinary });
 }
 
 async function main() {
   const args = process.argv.slice(2);
   if (args[0] === '--plan') {
-    const { manifest } = await workingSourcePackage();
-    const digest = digestManifest(manifest);
-    const role = args[1] === '--role' ? args[2] : null;
-    if (!['collector', 'publisher'].includes(role)) throw new Error('role required');
-    process.stdout.write(stableJson({
-      status: 'plan-only',
-      role,
-      runtime: 'content-addressed-copy',
-      runtimeDigest: digest,
-      registration: 'requires explicit apply approval',
-      label: role === 'collector' ? 'com.graffitoryu.profile-activity.collector' : 'com.graffitoryu.profile-activity.publisher',
-      schedule: role === 'collector' ? 'login and 15-minute interval candidate' : 'separate local collection and later processing candidates',
-      publisherIsolation: role === 'publisher' ? 'private global lock and candidate worktree outside source checkout' : null,
-      requiredPrivateValues: ['sourceId', 'logRoots', 'stateDir', 'runtimeDir', 'transportDir'],
-    }));
+    process.stdout.write(stableJson({ status: 'plan-only', runtime: 'content-addressed-copy', scheduler: 'external', schedule: 'daily at 00:30 UTC', requiredPrivateValues: ['codexBinary', 'stateDir', 'runtimeDir', 'publisher'] }));
     return;
   }
   if (!['--apply', '--remove', '--replace'].includes(args[0]) || args[1] !== '--config' || !args[2]) throw new Error('usage');
@@ -119,134 +86,53 @@ async function main() {
   const installedConfigFile = path.join(config.stateDir, 'installed-config.json');
   const receiptFile = path.join(config.stateDir, 'installation-receipt.json');
   if (args[0] === '--remove') {
-    const { receipt } = await validateInstallation(config, args[2]);
-    if (config.role === 'collector' && config.launchAgent) {
-      await run('/bin/launchctl', ['bootout', `gui/${process.getuid()}/${config.launchAgent.label}`]).catch(() => {});
-      if (await exists(config.launchAgent.plistFile)) {
-        const digest = createHash('sha256').update(await readFile(config.launchAgent.plistFile)).digest('hex');
-        if (digest !== receipt.launchAgentDigest) throw new Error('launch agent receipt mismatch');
-        await unlink(config.launchAgent.plistFile);
-      }
-    }
+    await validateInstallation(config, args[2]);
     await removeRuntime(config);
     await unlink(installedConfigFile);
     await unlink(receiptFile);
-    process.stdout.write(stableJson({ status: 'runtime-removed', registration: 'removed' }));
+    process.stdout.write(stableJson({ status: 'runtime-removed' }));
     return;
   }
   const commitIndex = args.indexOf('--source-commit');
   if (commitIndex < 0 || !args[commitIndex + 1]) throw new Error('source commit required');
-  const sourcePackage = await committedSourcePackage(args[commitIndex + 1]);
-  const { files, manifest, sourceCommit } = sourcePackage;
-  const digest = digestManifest(manifest);
-  const codexBinary = (await run('/usr/bin/which', ['codex'], { encoding: 'utf8' })).stdout.trim();
-  if (!path.isAbsolute(codexBinary)) throw new Error('codex binary unavailable');
+  const { files, manifest, sourceCommit } = await sourcePackage(args[commitIndex + 1]);
+  const runtimeDigest = digestManifest(manifest);
+  const gitBinary = (await run('/usr/bin/which', ['git'], { encoding: 'utf8' })).stdout.trim();
+  const hooksPath = (await run('git', ['-C', config.publisher.repoDir, 'config', '--get', 'core.hooksPath'], { encoding: 'utf8' }).catch(() => ({ stdout: '' }))).stdout.trim();
+  if ((config.publisher.hooksPath ?? '') !== hooksPath) throw new Error('Git hooks changed');
+  const publisher = { ...config.publisher, hooksManifest: await capturePublisherHooks(config.publisher.repoDir) };
   if (args[0] === '--replace') {
-    const collector = config.role === 'collector';
-    if (!config.publisher || collector !== Boolean(config.launchAgent)) throw new Error('publisher replacement required');
     const current = await validateInstallation(config, args[2]);
-    const target = path.join(path.dirname(config.runtimeDir), digest);
+    const target = path.join(path.dirname(config.runtimeDir), runtimeDigest);
     if (target === config.runtimeDir || await exists(target)) throw new Error('replacement target exists');
-    const gitBinary = (await run('/usr/bin/which', ['git'], { encoding: 'utf8' })).stdout.trim();
-    const hooksPath = (await run('git', ['-C', config.publisher.repoDir, 'config', '--get', 'core.hooksPath'], { encoding: 'utf8' }).catch(() => ({ stdout: '' }))).stdout.trim();
-    if ((config.publisher.hooksPath ?? '') !== hooksPath) throw new Error('Git hooks changed');
-    const publisher = { ...config.publisher, hooksManifest: await capturePublisherHooks(config.publisher.repoDir) };
-    const configTemp = `${current.installedConfigFile}.${process.pid}.tmp`;
-    const receiptTemp = `${current.receiptFile}.${process.pid}.tmp`;
-    const plistTemp = collector ? `${config.launchAgent.plistFile}.${process.pid}.tmp` : null;
-    let oldPlist = null;
-    let newPlist = null;
-    let launchAgentDigest = null;
-    if (collector) {
-      oldPlist = await readFile(config.launchAgent.plistFile, 'utf8');
-      if (createHash('sha256').update(oldPlist).digest('hex') !== current.receipt.launchAgentDigest) throw new Error('launch agent receipt mismatch');
-      newPlist = collectorPlist({ label: config.launchAgent.label, nodeBinary: process.execPath, cli: path.join(target, 'cli.mjs'), configFile: current.installedConfigFile });
-      launchAgentDigest = createHash('sha256').update(newPlist).digest('hex');
-    }
-    await mkdir(target, { recursive: false, mode: 0o700 });
+    await writeRuntime(target, files, manifest);
+    const installedConfig = stableJson({ ...config, publisher, runtimeDir: target, runtimeManifest: manifest });
+    const configTemp = `${installedConfigFile}.${process.pid}.tmp`;
+    const receiptTemp = `${receiptFile}.${process.pid}.tmp`;
     try {
-      for (const name of Object.keys(manifest)) await writeFile(path.join(target, name), files[name], { flag: 'wx', mode: 0o600 });
-      await writeFile(path.join(target, 'manifest.json'), stableJson(manifest), { flag: 'wx', mode: 0o600 });
-      await verifyRuntimeManifest(target, manifest);
-      const installedConfig = stableJson({ ...config, codexBinary, publisher, runtimeDir: target, runtimeManifest: manifest });
-      const receipt = (registration) => stableJson({ schemaVersion: 1, role: config.role, sourceCommit, stateDir: config.stateDir, runtimeDir: target, runtimeDigest: digest, runtimeManifestDigest: digestManifest(manifest), installedConfigDigest: createHash('sha256').update(installedConfig).digest('hex'), nodeBinary: process.execPath, gitBinary, launchAgentLabel: collector ? config.launchAgent.label : null, launchAgentDigest, registration });
       await writeFile(configTemp, installedConfig, { flag: 'wx', mode: 0o600 });
-      await writeFile(receiptTemp, receipt(collector ? 'pending' : 'not-created'), { flag: 'wx', mode: 0o600 });
-      if (collector) await writeFile(plistTemp, newPlist, { flag: 'wx', mode: 0o600 });
-      let stopped = false;
-      try {
-        if (collector) {
-          await run('/bin/launchctl', ['bootout', `gui/${process.getuid()}/${config.launchAgent.label}`]);
-          stopped = true;
-        }
-        await rename(configTemp, current.installedConfigFile);
-        await rename(receiptTemp, current.receiptFile);
-        if (collector) {
-          await rename(plistTemp, config.launchAgent.plistFile);
-          await run('/bin/launchctl', ['bootstrap', `gui/${process.getuid()}`, config.launchAgent.plistFile]);
-          await writeFile(current.receiptFile, receipt('active'), { mode: 0o600 });
-        }
-      } catch (error) {
-        await writeFile(current.installedConfigFile, current.installedConfig, { mode: 0o600 });
-        await writeFile(current.receiptFile, stableJson(current.receipt), { mode: 0o600 });
-        if (collector) {
-          await writeFile(config.launchAgent.plistFile, oldPlist, { mode: 0o600 });
-          if (stopped) await run('/bin/launchctl', ['bootstrap', `gui/${process.getuid()}`, config.launchAgent.plistFile]).catch(() => {});
-        }
-        await unlink(configTemp).catch(() => {});
-        await unlink(receiptTemp).catch(() => {});
-        if (plistTemp) await unlink(plistTemp).catch(() => {});
-        throw error;
-      }
+      await writeFile(receiptTemp, receipt({ sourceCommit, stateDir: config.stateDir, runtimeDir: target, runtimeDigest, installedConfig, gitBinary }), { flag: 'wx', mode: 0o600 });
+      await rename(configTemp, installedConfigFile);
+      await rename(receiptTemp, receiptFile);
     } catch (error) {
-      await unlink(configTemp).catch(() => {});
-      await unlink(receiptTemp).catch(() => {});
-      if (plistTemp) await unlink(plistTemp).catch(() => {});
-      const entries = await readdir(target).catch(() => []);
-      for (const name of entries) await unlink(path.join(target, name)).catch(() => {});
-      await rmdir(target).catch(() => {});
+      await writeFile(installedConfigFile, current.installedConfig, { mode: 0o600 });
+      await writeFile(receiptFile, stableJson(current.receipt), { mode: 0o600 });
       throw error;
     }
     let cleanup = 'complete';
     try { await removeRuntime(config); } catch { cleanup = 'pending'; }
-    process.stdout.write(stableJson({ status: 'runtime-replaced', registration: collector ? 'active' : 'not-created', cleanup }));
+    process.stdout.write(stableJson({ status: 'runtime-replaced', cleanup }));
     return;
   }
-  if (config.role === 'collector' && !config.launchAgent) throw new Error('collector launchAgent required');
-  const target = path.join(config.runtimeDir, digest);
-  if (await exists(target) || await exists(installedConfigFile) || await exists(receiptFile) || (config.launchAgent && await exists(config.launchAgent.plistFile))) throw new Error('existing installation refused');
-  if (config.launchAgent && await run('/bin/launchctl', ['print', `gui/${process.getuid()}/${config.launchAgent.label}`]).then(() => true, () => false)) throw new Error('existing launch agent refused');
+  const target = path.join(config.runtimeDir, runtimeDigest);
+  if (await exists(target) || await exists(installedConfigFile) || await exists(receiptFile)) throw new Error('existing installation refused');
   await mkdir(config.runtimeDir, { recursive: true, mode: 0o700 });
   await mkdir(config.stateDir, { recursive: true, mode: 0o700 });
-  await mkdir(target, { recursive: false, mode: 0o700 });
-  for (const name of Object.keys(manifest)) await writeFile(path.join(target, name), files[name], { flag: 'wx', mode: 0o600 });
-  await writeFile(path.join(target, 'manifest.json'), stableJson(manifest), { flag: 'wx', mode: 0o600 });
-  const gitBinary = (await run('/usr/bin/which', ['git'], { encoding: 'utf8' })).stdout.trim();
-  let publisher = config.publisher;
-  if (publisher) {
-    const hooksPath = (await run('git', ['-C', publisher.repoDir, 'config', '--get', 'core.hooksPath'], { encoding: 'utf8' }).catch(() => ({ stdout: '' }))).stdout.trim();
-    if ((publisher.hooksPath ?? '') !== hooksPath) throw new Error('Git hooks changed');
-    publisher = { ...publisher, hooksManifest: await capturePublisherHooks(publisher.repoDir) };
-  }
-  const installedConfig = stableJson({ ...config, codexBinary, publisher, runtimeDir: target, runtimeManifest: manifest });
+  await writeRuntime(target, files, manifest);
+  const installedConfig = stableJson({ ...config, publisher, runtimeDir: target, runtimeManifest: manifest });
   await writeFile(installedConfigFile, installedConfig, { flag: 'wx', mode: 0o600 });
-  let registration = 'not-created';
-  let launchAgentDigest = null;
-  const receipt = () => ({ schemaVersion: 1, role: config.role, sourceCommit, stateDir: config.stateDir, runtimeDir: target, runtimeDigest: digest, runtimeManifestDigest: digestManifest(manifest), installedConfigDigest: createHash('sha256').update(installedConfig).digest('hex'), nodeBinary: process.execPath, gitBinary, launchAgentLabel: config.launchAgent?.label ?? null, launchAgentDigest, registration });
-  if (config.launchAgent) {
-    await mkdir(path.dirname(config.launchAgent.plistFile), { recursive: true, mode: 0o700 });
-    const plist = collectorPlist({ label: config.launchAgent.label, nodeBinary: process.execPath, cli: path.join(target, 'cli.mjs'), configFile: installedConfigFile });
-    launchAgentDigest = createHash('sha256').update(plist).digest('hex');
-    await writeFile(config.launchAgent.plistFile, plist, { flag: 'wx', mode: 0o600 });
-    registration = 'pending';
-    await writeFile(receiptFile, stableJson(receipt()), { flag: 'wx', mode: 0o600 });
-    await run('/bin/launchctl', ['bootstrap', `gui/${process.getuid()}`, config.launchAgent.plistFile]);
-    registration = 'active';
-    await writeFile(receiptFile, stableJson(receipt()), { mode: 0o600 });
-  } else {
-    await writeFile(receiptFile, stableJson(receipt()), { flag: 'wx', mode: 0o600 });
-  }
-  process.stdout.write(stableJson({ status: 'runtime-installed', runtimeDigest: digest, registration }));
+  await writeFile(receiptFile, receipt({ sourceCommit, stateDir: config.stateDir, runtimeDir: target, runtimeDigest, installedConfig, gitBinary }), { flag: 'wx', mode: 0o600 });
+  process.stdout.write(stableJson({ status: 'runtime-installed', runtimeDigest }));
 }
 
 if (process.argv[1] && await realpath(process.argv[1]) === await realpath(fileURLToPath(import.meta.url))) {

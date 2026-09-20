@@ -1,741 +1,139 @@
 {
-  "schemaVersion": 5,
-  "metricScope": "codex-activity-evidence",
+  "schemaVersion": 6,
+  "metricScope": "codex-account-token-activity",
   "timezone": "Asia/Seoul",
   "window": {
     "from": "2026-08-22",
     "to": "2026-09-20"
   },
   "asOfDate": "2026-09-20",
-  "completeThroughDate": null,
-  "status": "partial",
-  "aggregation": "sum",
-  "accountTokenUsage": {
-    "readSucceeded": true,
-    "window": {
-      "from": "2026-08-22",
-      "to": "2026-09-20"
-    },
-    "definition": "chatgpt-account-token-activity",
-    "refreshCadence": null,
-    "localComparable": false,
-    "automatedCollection": true,
-    "summary": {
-      "lifetimeTokens": 41126977768,
-      "peakDailyTokens": 1067831636,
-      "longestRunningTurnSec": 59711,
-      "currentStreakDays": 35,
-      "longestStreakDays": 35
-    },
-    "days": [
-      {
-        "date": "2026-08-22",
-        "tokens": 178485366
-      },
-      {
-        "date": "2026-08-23",
-        "tokens": 703395684
-      },
-      {
-        "date": "2026-08-24",
-        "tokens": 248176351
-      },
-      {
-        "date": "2026-08-25",
-        "tokens": 607569497
-      },
-      {
-        "date": "2026-08-26",
-        "tokens": 465750366
-      },
-      {
-        "date": "2026-08-27",
-        "tokens": 414338860
-      },
-      {
-        "date": "2026-08-28",
-        "tokens": 529042659
-      },
-      {
-        "date": "2026-08-29",
-        "tokens": 853211539
-      },
-      {
-        "date": "2026-08-30",
-        "tokens": 627925357
-      },
-      {
-        "date": "2026-08-31",
-        "tokens": 540039339
-      },
-      {
-        "date": "2026-09-01",
-        "tokens": 354940383
-      },
-      {
-        "date": "2026-09-02",
-        "tokens": 531010479
-      },
-      {
-        "date": "2026-09-03",
-        "tokens": 835243000
-      },
-      {
-        "date": "2026-09-04",
-        "tokens": 682923095
-      },
-      {
-        "date": "2026-09-05",
-        "tokens": 169143256
-      },
-      {
-        "date": "2026-09-06",
-        "tokens": 1067831636
-      },
-      {
-        "date": "2026-09-07",
-        "tokens": 824793462
-      },
-      {
-        "date": "2026-09-08",
-        "tokens": 510744953
-      },
-      {
-        "date": "2026-09-09",
-        "tokens": 1006149964
-      },
-      {
-        "date": "2026-09-10",
-        "tokens": 813943995
-      },
-      {
-        "date": "2026-09-11",
-        "tokens": 299176144
-      },
-      {
-        "date": "2026-09-12",
-        "tokens": 218087542
-      },
-      {
-        "date": "2026-09-13",
-        "tokens": 509810549
-      },
-      {
-        "date": "2026-09-14",
-        "tokens": 839844303
-      },
-      {
-        "date": "2026-09-15",
-        "tokens": 351871988
-      },
-      {
-        "date": "2026-09-16",
-        "tokens": 182573890
-      },
-      {
-        "date": "2026-09-17",
-        "tokens": 104006627
-      },
-      {
-        "date": "2026-09-18",
-        "tokens": 505572752
-      },
-      {
-        "date": "2026-09-19",
-        "tokens": 863817998
-      },
-      {
-        "date": "2026-09-20",
-        "tokens": 140052192
-      }
-    ]
-  },
   "summary": {
-    "activeDays": 30,
-    "sessionDays": 235,
-    "toolCalls": 22341,
-    "totalTokens": 1961497663,
-    "maxSessionTokens": 295476810,
-    "longestSessionMinutes": 12085,
-    "currentStreakDays": 30,
-    "longestStreakDays": 30,
-    "newChats": 180,
-    "pluginCalls": 0,
-    "browserCalls": 0,
-    "computerUseCalls": 0,
-    "otherToolCalls": 22341,
-    "skillUses": null,
-    "fastModePercent": null,
-    "reasoningPercent": null
+    "lifetimeTokens": 41126977768,
+    "peakDailyTokens": 1067831636,
+    "longestRunningTurnSec": 59711,
+    "currentStreakDays": 35,
+    "longestStreakDays": 35
   },
   "days": [
     {
       "date": "2026-08-22",
-      "active": true,
-      "activeSessions": 15,
-      "newChats": 12,
-      "toolCalls": 1216,
-      "pluginCalls": 0,
-      "browserCalls": 0,
-      "computerUseCalls": 0,
-      "otherToolCalls": 1216,
-      "skillUses": null,
-      "tokens": 159329863,
-      "maxSessionTokens": 129588293,
-      "longestSessionMinutes": 130,
-      "fastModePercent": null,
-      "reasoningPercent": {
-        "none": 0,
-        "low": 0,
-        "medium": 100,
-        "high": 0,
-        "xhigh": 0,
-        "other": 0
-      },
-      "coverage": "partial"
+      "tokens": 178485366
     },
     {
       "date": "2026-08-23",
-      "active": true,
-      "activeSessions": 0,
-      "newChats": 0,
-      "toolCalls": 0,
-      "pluginCalls": 0,
-      "browserCalls": 0,
-      "computerUseCalls": 0,
-      "otherToolCalls": 0,
-      "skillUses": null,
-      "tokens": 0,
-      "maxSessionTokens": 0,
-      "longestSessionMinutes": 0,
-      "fastModePercent": null,
-      "reasoningPercent": null,
-      "coverage": "partial"
+      "tokens": 703395684
     },
     {
       "date": "2026-08-24",
-      "active": true,
-      "activeSessions": 7,
-      "newChats": 6,
-      "toolCalls": 639,
-      "pluginCalls": 0,
-      "browserCalls": 0,
-      "computerUseCalls": 0,
-      "otherToolCalls": 639,
-      "skillUses": null,
-      "tokens": 77541768,
-      "maxSessionTokens": 25450658,
-      "longestSessionMinutes": 159,
-      "fastModePercent": null,
-      "reasoningPercent": null,
-      "coverage": "partial"
+      "tokens": 248176351
     },
     {
       "date": "2026-08-25",
-      "active": true,
-      "activeSessions": 11,
-      "newChats": 8,
-      "toolCalls": 1377,
-      "pluginCalls": 0,
-      "browserCalls": 0,
-      "computerUseCalls": 0,
-      "otherToolCalls": 1377,
-      "skillUses": null,
-      "tokens": 122990039,
-      "maxSessionTokens": 73116026,
-      "longestSessionMinutes": 1512,
-      "fastModePercent": null,
-      "reasoningPercent": null,
-      "coverage": "partial"
+      "tokens": 607569497
     },
     {
       "date": "2026-08-26",
-      "active": true,
-      "activeSessions": null,
-      "newChats": null,
-      "toolCalls": null,
-      "pluginCalls": null,
-      "browserCalls": null,
-      "computerUseCalls": null,
-      "otherToolCalls": null,
-      "skillUses": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
-      "coverage": "partial"
+      "tokens": 465750366
     },
     {
       "date": "2026-08-27",
-      "active": true,
-      "activeSessions": null,
-      "newChats": null,
-      "toolCalls": null,
-      "pluginCalls": null,
-      "browserCalls": null,
-      "computerUseCalls": null,
-      "otherToolCalls": null,
-      "skillUses": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
-      "coverage": "partial"
+      "tokens": 414338860
     },
     {
       "date": "2026-08-28",
-      "active": true,
-      "activeSessions": 22,
-      "newChats": 16,
-      "toolCalls": 2098,
-      "pluginCalls": 0,
-      "browserCalls": 0,
-      "computerUseCalls": 0,
-      "otherToolCalls": 2098,
-      "skillUses": null,
-      "tokens": 172165785,
-      "maxSessionTokens": 60630107,
-      "longestSessionMinutes": 1608,
-      "fastModePercent": null,
-      "reasoningPercent": null,
-      "coverage": "partial"
+      "tokens": 529042659
     },
     {
       "date": "2026-08-29",
-      "active": true,
-      "activeSessions": 2,
-      "newChats": 1,
-      "toolCalls": 471,
-      "pluginCalls": 0,
-      "browserCalls": 0,
-      "computerUseCalls": 0,
-      "otherToolCalls": 471,
-      "skillUses": null,
-      "tokens": 58262481,
-      "maxSessionTokens": 70356958,
-      "longestSessionMinutes": 0,
-      "fastModePercent": null,
-      "reasoningPercent": null,
-      "coverage": "partial"
+      "tokens": 853211539
     },
     {
       "date": "2026-08-30",
-      "active": true,
-      "activeSessions": 2,
-      "newChats": 0,
-      "toolCalls": 532,
-      "pluginCalls": 0,
-      "browserCalls": 0,
-      "computerUseCalls": 0,
-      "otherToolCalls": 532,
-      "skillUses": null,
-      "tokens": 81239553,
-      "maxSessionTokens": 148976258,
-      "longestSessionMinutes": 1219,
-      "fastModePercent": null,
-      "reasoningPercent": null,
-      "coverage": "partial"
+      "tokens": 627925357
     },
     {
       "date": "2026-08-31",
-      "active": true,
-      "activeSessions": 76,
-      "newChats": 71,
-      "toolCalls": 3919,
-      "pluginCalls": 0,
-      "browserCalls": 0,
-      "computerUseCalls": 0,
-      "otherToolCalls": 3919,
-      "skillUses": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": 5783,
-      "fastModePercent": null,
-      "reasoningPercent": null,
-      "coverage": "partial"
+      "tokens": 540039339
     },
     {
       "date": "2026-09-01",
-      "active": true,
-      "activeSessions": 35,
-      "newChats": 26,
-      "toolCalls": 2483,
-      "pluginCalls": 0,
-      "browserCalls": 0,
-      "computerUseCalls": 0,
-      "otherToolCalls": 2483,
-      "skillUses": null,
-      "tokens": 272227426,
-      "maxSessionTokens": 256318310,
-      "longestSessionMinutes": 12085,
-      "fastModePercent": null,
-      "reasoningPercent": {
-        "none": 0,
-        "low": 0,
-        "medium": 100,
-        "high": 0,
-        "xhigh": 0,
-        "other": 0
-      },
-      "coverage": "partial"
+      "tokens": 354940383
     },
     {
       "date": "2026-09-02",
-      "active": true,
-      "activeSessions": 7,
-      "newChats": 3,
-      "toolCalls": 1243,
-      "pluginCalls": 0,
-      "browserCalls": 0,
-      "computerUseCalls": 0,
-      "otherToolCalls": 1243,
-      "skillUses": null,
-      "tokens": 150334134,
-      "maxSessionTokens": 81476659,
-      "longestSessionMinutes": 1197,
-      "fastModePercent": null,
-      "reasoningPercent": null,
-      "coverage": "partial"
+      "tokens": 531010479
     },
     {
       "date": "2026-09-03",
-      "active": true,
-      "activeSessions": 4,
-      "newChats": 1,
-      "toolCalls": 2052,
-      "pluginCalls": 0,
-      "browserCalls": 0,
-      "computerUseCalls": 0,
-      "otherToolCalls": 2052,
-      "skillUses": null,
-      "tokens": 179211537,
-      "maxSessionTokens": 218668965,
-      "longestSessionMinutes": 1628,
-      "fastModePercent": null,
-      "reasoningPercent": null,
-      "coverage": "partial"
+      "tokens": 835243000
     },
     {
       "date": "2026-09-04",
-      "active": true,
-      "activeSessions": 5,
-      "newChats": 2,
-      "toolCalls": 694,
-      "pluginCalls": 0,
-      "browserCalls": 0,
-      "computerUseCalls": 0,
-      "otherToolCalls": 694,
-      "skillUses": null,
-      "tokens": 79796601,
-      "maxSessionTokens": 295476810,
-      "longestSessionMinutes": 1388,
-      "fastModePercent": null,
-      "reasoningPercent": null,
-      "coverage": "partial"
+      "tokens": 682923095
     },
     {
       "date": "2026-09-05",
-      "active": true,
-      "activeSessions": 5,
-      "newChats": 1,
-      "toolCalls": 484,
-      "pluginCalls": 0,
-      "browserCalls": 0,
-      "computerUseCalls": 0,
-      "otherToolCalls": 484,
-      "skillUses": null,
-      "tokens": 43908822,
-      "maxSessionTokens": 295476810,
-      "longestSessionMinutes": 0,
-      "fastModePercent": null,
-      "reasoningPercent": {
-        "none": 0,
-        "low": 0,
-        "medium": 100,
-        "high": 0,
-        "xhigh": 0,
-        "other": 0
-      },
-      "coverage": "partial"
+      "tokens": 169143256
     },
     {
       "date": "2026-09-06",
-      "active": true,
-      "activeSessions": 2,
-      "newChats": 1,
-      "toolCalls": 231,
-      "pluginCalls": 0,
-      "browserCalls": 0,
-      "computerUseCalls": 0,
-      "otherToolCalls": 231,
-      "skillUses": null,
-      "tokens": 18705867,
-      "maxSessionTokens": 295476810,
-      "longestSessionMinutes": 8659,
-      "fastModePercent": null,
-      "reasoningPercent": null,
-      "coverage": "partial"
+      "tokens": 1067831636
     },
     {
       "date": "2026-09-07",
-      "active": true,
-      "activeSessions": null,
-      "newChats": null,
-      "toolCalls": null,
-      "pluginCalls": null,
-      "browserCalls": null,
-      "computerUseCalls": null,
-      "otherToolCalls": null,
-      "skillUses": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
-      "coverage": "partial"
+      "tokens": 824793462
     },
     {
       "date": "2026-09-08",
-      "active": true,
-      "activeSessions": null,
-      "newChats": null,
-      "toolCalls": null,
-      "pluginCalls": null,
-      "browserCalls": null,
-      "computerUseCalls": null,
-      "otherToolCalls": null,
-      "skillUses": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
-      "coverage": "partial"
+      "tokens": 510744953
     },
     {
       "date": "2026-09-09",
-      "active": true,
-      "activeSessions": null,
-      "newChats": null,
-      "toolCalls": null,
-      "pluginCalls": null,
-      "browserCalls": null,
-      "computerUseCalls": null,
-      "otherToolCalls": null,
-      "skillUses": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
-      "coverage": "partial"
+      "tokens": 1006149964
     },
     {
       "date": "2026-09-10",
-      "active": true,
-      "activeSessions": null,
-      "newChats": null,
-      "toolCalls": null,
-      "pluginCalls": null,
-      "browserCalls": null,
-      "computerUseCalls": null,
-      "otherToolCalls": null,
-      "skillUses": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
-      "coverage": "partial"
+      "tokens": 813943995
     },
     {
       "date": "2026-09-11",
-      "active": true,
-      "activeSessions": 1,
-      "newChats": 0,
-      "toolCalls": 36,
-      "pluginCalls": 0,
-      "browserCalls": 0,
-      "computerUseCalls": 0,
-      "otherToolCalls": 36,
-      "skillUses": null,
-      "tokens": 0,
-      "maxSessionTokens": 159997012,
-      "longestSessionMinutes": 2932,
-      "fastModePercent": null,
-      "reasoningPercent": null,
-      "coverage": "partial"
+      "tokens": 299176144
     },
     {
       "date": "2026-09-12",
-      "active": true,
-      "activeSessions": 6,
-      "newChats": 4,
-      "toolCalls": 835,
-      "pluginCalls": 0,
-      "browserCalls": 0,
-      "computerUseCalls": 0,
-      "otherToolCalls": 835,
-      "skillUses": null,
-      "tokens": 81105180,
-      "maxSessionTokens": 138617950,
-      "longestSessionMinutes": 1807,
-      "fastModePercent": null,
-      "reasoningPercent": {
-        "none": 0,
-        "low": 0,
-        "medium": 100,
-        "high": 0,
-        "xhigh": 0,
-        "other": 0
-      },
-      "coverage": "partial"
+      "tokens": 218087542
     },
     {
       "date": "2026-09-13",
-      "active": true,
-      "activeSessions": 1,
-      "newChats": 1,
-      "toolCalls": 90,
-      "pluginCalls": 0,
-      "browserCalls": 0,
-      "computerUseCalls": 0,
-      "otherToolCalls": 90,
-      "skillUses": null,
-      "tokens": 9997055,
-      "maxSessionTokens": 9997055,
-      "longestSessionMinutes": 0,
-      "fastModePercent": null,
-      "reasoningPercent": null,
-      "coverage": "partial"
+      "tokens": 509810549
     },
     {
       "date": "2026-09-14",
-      "active": true,
-      "activeSessions": null,
-      "newChats": null,
-      "toolCalls": null,
-      "pluginCalls": null,
-      "browserCalls": null,
-      "computerUseCalls": null,
-      "otherToolCalls": null,
-      "skillUses": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
-      "coverage": "partial"
+      "tokens": 839844303
     },
     {
       "date": "2026-09-15",
-      "active": true,
-      "activeSessions": 6,
-      "newChats": 5,
-      "toolCalls": 1047,
-      "pluginCalls": 0,
-      "browserCalls": 0,
-      "computerUseCalls": 0,
-      "otherToolCalls": 1047,
-      "skillUses": null,
-      "tokens": 150246429,
-      "maxSessionTokens": 66111435,
-      "longestSessionMinutes": 2920,
-      "fastModePercent": null,
-      "reasoningPercent": null,
-      "coverage": "partial"
+      "tokens": 351871988
     },
     {
       "date": "2026-09-16",
-      "active": true,
-      "activeSessions": 19,
-      "newChats": 15,
-      "toolCalls": 1176,
-      "pluginCalls": 0,
-      "browserCalls": 0,
-      "computerUseCalls": 0,
-      "otherToolCalls": 1176,
-      "skillUses": null,
-      "tokens": 166997501,
-      "maxSessionTokens": 40819229,
-      "longestSessionMinutes": 4069,
-      "fastModePercent": null,
-      "reasoningPercent": null,
-      "coverage": "partial"
+      "tokens": 182573890
     },
     {
       "date": "2026-09-17",
-      "active": true,
-      "activeSessions": 7,
-      "newChats": 7,
-      "toolCalls": 705,
-      "pluginCalls": 0,
-      "browserCalls": 0,
-      "computerUseCalls": 0,
-      "otherToolCalls": 705,
-      "skillUses": null,
-      "tokens": 88590950,
-      "maxSessionTokens": 23277709,
-      "longestSessionMinutes": 2624,
-      "fastModePercent": null,
-      "reasoningPercent": null,
-      "coverage": "partial"
+      "tokens": 104006627
     },
     {
       "date": "2026-09-18",
-      "active": true,
-      "activeSessions": 2,
-      "newChats": 0,
-      "toolCalls": 319,
-      "pluginCalls": 0,
-      "browserCalls": 0,
-      "computerUseCalls": 0,
-      "otherToolCalls": 319,
-      "skillUses": null,
-      "tokens": 48846672,
-      "maxSessionTokens": 49050435,
-      "longestSessionMinutes": 1258,
-      "fastModePercent": null,
-      "reasoningPercent": null,
-      "coverage": "partial"
+      "tokens": 505572752
     },
     {
       "date": "2026-09-19",
-      "active": true,
-      "activeSessions": null,
-      "newChats": null,
-      "toolCalls": 694,
-      "pluginCalls": 0,
-      "browserCalls": 0,
-      "computerUseCalls": 0,
-      "otherToolCalls": 694,
-      "skillUses": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
-      "coverage": "partial"
+      "tokens": 863817998
     },
     {
       "date": "2026-09-20",
-      "active": true,
-      "activeSessions": null,
-      "newChats": null,
-      "toolCalls": null,
-      "pluginCalls": null,
-      "browserCalls": null,
-      "computerUseCalls": null,
-      "otherToolCalls": null,
-      "skillUses": null,
-      "tokens": null,
-      "maxSessionTokens": null,
-      "longestSessionMinutes": null,
-      "fastModePercent": null,
-      "reasoningPercent": null,
-      "coverage": "partial"
+      "tokens": 140052192
     }
   ]
 }

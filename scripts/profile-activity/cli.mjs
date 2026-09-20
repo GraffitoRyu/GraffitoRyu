@@ -5,42 +5,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 let addDays;
-let activityCollectionFromSnapshot;
-let aggregateCollections;
-let currentActivityCollections;
-let attachAccountActivity;
-let attachAccountTokenUsage;
-let parseAccountActivity;
-let readAccountTokenUsage;
-let parseAccountUsage;
-let processActivitySurface;
-let atomicWrite;
-let collectLogRoots;
-let isPublishableActivity;
+let failureEvidence;
 let parseDate;
-let parsePrivateSnapshot;
-let probeLogRoots;
 let publishGenerated;
-let publishGeneratedUnlocked;
-let publishOwnedCollection;
-let publishIfReady;
+let readAccountTokenUsage;
 let readConfig;
-let readSnapshot;
 let renderActivitySvg;
-let nextDelivery;
-let acceptAcknowledgement;
-let receiveEnvelope;
-let saveAndExportSnapshot;
 let stableJson;
-let classifyFailure;
-let executionStage = 'startup';
-let stateChanged = false;
-
-function startupFailure(error) {
-  const permission = ['EACCES', 'EPERM'].includes(error?.code);
-  const validation = !permission && /invalid|usage|required|refused/i.test(error?.message ?? '');
-  return { status: 'error', stage: executionStage, exitCode: 1, signal: null, errorClass: permission ? 'permission' : validation ? 'validation' : 'integrity', stderrClass: permission ? 'permission-denied' : validation ? 'validation-rejected' : 'integrity-rejected', stateChanged };
-}
 
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
@@ -55,7 +26,7 @@ async function verifyBeforeImport(argv) {
   const manifest = config.runtimeManifest;
   const names = manifest && typeof manifest === 'object' && !Array.isArray(manifest) ? Object.keys(manifest).sort() : [];
   if (names.length === 0) {
-    if (!(argv[0] === 'probe' || argv.includes('--dry-run'))) throw new Error('installed runtime manifest required');
+    if (!argv.includes('--dry-run')) throw new Error('installed runtime manifest required');
     return;
   }
   const runtimeDir = path.dirname(fileURLToPath(import.meta.url));
@@ -71,51 +42,24 @@ async function verifyBeforeImport(argv) {
   if (configFile !== path.join(stateDir, 'installed-config.json') || await realpath(config.runtimeDir) !== runtimeDir) throw new Error('installed runtime path mismatch');
   const receipt = JSON.parse(await readFile(path.join(stateDir, 'installation-receipt.json'), 'utf8'));
   const manifestDigest = sha256(`${JSON.stringify(manifest, null, 2)}\n`);
-  if (receipt.schemaVersion !== 1 || receipt.stateDir !== stateDir || receipt.runtimeDir !== config.runtimeDir || receipt.runtimeDigest !== path.basename(runtimeDir) || receipt.runtimeDigest !== manifestDigest || receipt.runtimeManifestDigest !== manifestDigest || receipt.installedConfigDigest !== sha256(configText) || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(receipt.sourceCommit)) throw new Error('installation receipt mismatch');
+  if (receipt.schemaVersion !== 2 || receipt.stateDir !== stateDir || receipt.runtimeDir !== config.runtimeDir || receipt.runtimeDigest !== manifestDigest || receipt.installedConfigDigest !== sha256(configText) || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(receipt.sourceCommit)) throw new Error('installation receipt mismatch');
 }
 
 async function loadRuntime() {
-  ({ attachAccountActivity, parseAccountUsage, processActivitySurface } = await import('./account-usage.mjs'));
-  ({ attachAccountTokenUsage, parseAccountActivity } = await import('./account-activity.mjs'));
+  ({ addDays, parseDate, stableJson } = await import('./contract.mjs'));
+  ({ failureEvidence } = await import('./execution.mjs'));
   ({ readAccountTokenUsage } = await import('./app-server-usage.mjs'));
-  ({ aggregateCollections } = await import('./aggregate.mjs'));
-  ({ activityCollectionFromSnapshot, currentActivityCollections } = await import('./collection.mjs'));
-  ({ collectLogRoots, probeLogRoots } = await import('./collect.mjs'));
   ({ readConfig } = await import('./config.mjs'));
-  ({ addDays, isPublishableActivity, parseDate, parsePrivateSnapshot, stableJson } = await import('./contract.mjs'));
-  ({ publishGenerated, publishGeneratedUnlocked, publishOwnedCollection } = await import('./publish.mjs'));
-  ({ publishIfReady } = await import('./publication-gate.mjs'));
-  ({ acceptAcknowledgement, nextDelivery, receiveEnvelope } = await import('./relay.mjs'));
-  ({ failureEvidence: classifyFailure } = await import('./delivery-execution.mjs'));
+  ({ publishGenerated } = await import('./publish.mjs'));
   ({ renderActivitySvg } = await import('./render.mjs'));
-  ({ atomicWrite, readSnapshot, saveAndExportSnapshot } = await import('./snapshot.mjs'));
-}
-
-function generatedActivity(activity) {
-  return {
-    'metrics/codex-activity.json': stableJson(activity),
-    'assets/codex-activity.svg': renderActivitySvg(activity),
-    'assets/codex-activity-ko.svg': renderActivitySvg(activity, 'ko'),
-  };
 }
 
 function argumentsFor(argv) {
   const [command, ...rest] = argv;
   const configIndex = rest.indexOf('--config');
-  if (!['probe', 'collect', 'refresh', 'run', 'outbox', 'acknowledge', 'receive'].includes(command) || configIndex < 0 || !rest[configIndex + 1]) throw new Error('usage');
+  if (command !== 'run' || configIndex < 0 || !rest[configIndex + 1]) throw new Error('usage');
   const dateIndex = rest.indexOf('--as-of');
-  return { command, configFile: rest[configIndex + 1], dryRun: rest.includes('--dry-run'), asOfDate: dateIndex < 0 ? null : parseDate(rest[dateIndex + 1]) };
-}
-
-async function readPrivateInput() {
-  let input = '';
-  let size = 0;
-  for await (const chunk of process.stdin) {
-    size += Buffer.byteLength(chunk);
-    if (size > 1024 * 1024) throw new Error('private input too large');
-    input += chunk;
-  }
-  return JSON.parse(input);
+  return { configFile: rest[configIndex + 1], dryRun: rest.includes('--dry-run'), asOfDate: dateIndex < 0 ? null : parseDate(rest[dateIndex + 1]) };
 }
 
 function todayKst() {
@@ -123,227 +67,25 @@ function todayKst() {
   return parts.filter(({ type }) => type !== 'literal').map(({ value }) => value).join('-');
 }
 
-async function collect(config, asOfDate, dryRun) {
-  const cacheFile = path.join(config.stateDir, 'collector-cache.json');
-  let cache = { files: {} };
-  try { cache = JSON.parse(await readFile(cacheFile, 'utf8')); } catch {}
-  const from = addDays(asOfDate, -(config.publicDays - 1));
-  const result = await collectLogRoots({ logRoots: config.logRoots, excludedRepoRoots: config.excludedRepoRoots, from, to: asOfDate, cache });
-  const snapshotFile = path.join(config.stateDir, 'snapshot.json');
-  let revision = 1;
-  try {
-    revision = (await readSnapshot(snapshotFile, config.stateDir)).revision + 1;
-  } catch (error) {
-    if (error.code !== 'ENOENT') {
-      if (!/invalid private snapshot keys/.test(error.message)) throw error;
-      const { sourceId, ...anonymous } = JSON.parse(await readFile(snapshotFile, 'utf8'));
-      if (sourceId !== config.sourceId) throw new Error('draft source mismatch');
-      const migrated = parsePrivateSnapshot(anonymous);
-      if (migrated.schemaVersion !== 3) throw new Error('invalid draft snapshot');
-      revision = migrated.revision + 1;
-    }
-  }
-  const snapshot = {
-    schemaVersion: 3,
-    revision,
-    policyId: config.policyId,
-    collectedAt: new Date().toISOString(),
-    timezone: config.timezone,
-    window: { from, to: asOfDate },
-    days: result.days,
-  };
-  if (!dryRun) {
-    await atomicWrite(cacheFile, result.cache, config.stateDir);
-    const exportFile = config.transportDir ? path.join(config.transportDir, `${config.sourceId}.json`) : null;
-    await saveAndExportSnapshot({ snapshot, localFile: snapshotFile, localScope: config.stateDir, exportFile, exportScope: config.transportDir });
-  }
-  const known = (key) => result.days.every((day) => day[key] !== null);
-  return { snapshot, summary: {
-    files: result.files,
-    coverage: result.days.some((day) => day.coverage === 'unknown') ? 'unknown' : result.partial ? 'partial' : 'complete',
-    activeDays: known('active') ? result.days.filter((day) => day.active).length : null,
-    sessionDays: known('activeSessions') ? result.days.reduce((sum, day) => sum + day.activeSessions, 0) : null,
-    toolCalls: known('toolCalls') ? result.days.reduce((sum, day) => sum + day.toolCalls, 0) : null,
-    totalTokens: known('tokens') ? result.days.reduce((sum, day) => sum + day.tokens, 0) : null,
-  } };
-}
-
-async function publisherSnapshots(config) {
-  const snapshots = [];
-  const add = (snapshot, sourceId) => snapshots.push({ sourceId, snapshot });
-  for (const source of config.expectedSources) {
-    if (source.sourceId === config.sourceId) {
-      try { add(await readSnapshot(path.join(config.stateDir, 'snapshot.json'), config.stateDir), source.sourceId); } catch (error) {
-        if (error.code !== 'ENOENT') throw error;
-      }
-      continue;
-    }
-    const cacheFile = path.join(config.stateDir, `last-good-${source.sourceId}.json`);
-    try {
-      add(await readSnapshot(cacheFile, config.stateDir), source.sourceId);
-      continue;
-    } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
-    }
-    const scope = source.location === 'local' ? config.stateDir : config.transportDir;
-    try { add(await readSnapshot(source.file, scope), source.sourceId); } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
-    }
-  }
-  return snapshots;
-}
-
 async function main() {
-  const requestedCommand = process.argv[2];
-  if (['probe', 'collect', 'refresh', 'run', 'outbox', 'acknowledge', 'receive'].includes(requestedCommand)) executionStage = requestedCommand;
   await verifyBeforeImport(process.argv.slice(2));
   await loadRuntime();
   const args = argumentsFor(process.argv.slice(2));
   const config = await readConfig(args.configFile);
-  if (config.publisher?.collectionPath && ['outbox', 'acknowledge', 'receive'].includes(args.command)) throw new Error('relay command refused for direct publication');
   const asOfDate = args.asOfDate ?? todayKst();
-  if (args.command === 'probe') {
-    process.stdout.write(stableJson({ status: 'ok', ...(await probeLogRoots(config.logRoots)) }));
-    return;
-  }
-  if (args.command === 'collect') {
-    if (!args.dryRun) stateChanged = 'unknown';
-    const result = await collect(config, asOfDate, args.dryRun);
-    stateChanged = !args.dryRun;
-    process.stdout.write(stableJson({ status: args.dryRun ? 'dry-run' : 'collected', ...result.summary }));
-    return;
-  }
-  if (args.command === 'outbox') {
-    if (config.role !== 'collector') throw new Error('collector role required');
-    const stateFile = path.join(config.stateDir, 'delivery-state.json');
-    const snapshot = await readSnapshot(path.join(config.stateDir, 'snapshot.json'), config.stateDir);
-    let state = null;
-    try { state = JSON.parse(await readFile(stateFile, 'utf8')); } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
-    }
-    const result = nextDelivery({ snapshot, state, date: todayKst() });
-    await atomicWrite(stateFile, result.state, config.stateDir);
-    stateChanged = true;
-    process.stdout.write(stableJson({ status: result.status, ...(result.envelope && { envelope: result.envelope }) }));
-    return;
-  }
-  if (args.command === 'acknowledge') {
-    if (config.role !== 'collector') throw new Error('collector role required');
-    const stateFile = path.join(config.stateDir, 'delivery-state.json');
-    const state = JSON.parse(await readFile(stateFile, 'utf8'));
-    const accepted = acceptAcknowledgement({ acknowledgement: await readPrivateInput(), state });
-    await atomicWrite(stateFile, accepted, config.stateDir);
-    stateChanged = true;
-    process.stdout.write(stableJson({ status: 'acknowledged', revision: accepted.acknowledgedRevision, ...(accepted.envelope.schema === 'PROFILE_ACTIVITY_SNAPSHOT_V3' ? {} : { digest: accepted.acknowledgedDigest }) }));
-    return;
-  }
-  if (args.command === 'receive') {
-    if (config.role !== 'publisher') throw new Error('publisher role required');
-    const sources = config.expectedSources.filter(({ location, sourceId }) => location === 'transport' && sourceId !== config.sourceId);
-    if (sources.length !== 1) throw new Error('single transport source required');
-    const source = sources[0];
-    const result = await receiveEnvelope({ envelope: await readPrivateInput(), expectedSourceId: source.sourceId, lastGoodFile: path.join(config.stateDir, `last-good-${source.sourceId}.json`), stateScope: config.stateDir });
-    stateChanged = result.status === 'received';
-    process.stdout.write(stableJson(result));
-    return;
-  }
-  if (!config.publisher) throw new Error('publisher config required');
-  const accountActivityOwner = config.publisher.collectionPath !== 'metrics/codex-activity-macmini.json';
-  let accountUsage = null;
-  let accountActivity = null;
-  const usageInput = args.command === 'run' && process.argv.includes('--account-usage-stdin');
-  const activityInput = args.command === 'run' && process.argv.includes('--account-activity-stdin');
-  if (usageInput && activityInput) throw new Error('single private input required');
-  if (activityInput && !accountActivityOwner) throw new Error('account activity owner required');
-  if (usageInput) {
-    accountUsage = parseAccountUsage(await readPrivateInput());
-    if (accountUsage !== null) {
-      await atomicWrite(path.join(config.stateDir, 'account-usage.json'), accountUsage, config.stateDir);
-      stateChanged = true;
-    }
-  }
-  if (activityInput) {
-    accountActivity = parseAccountActivity(await readPrivateInput());
-    await atomicWrite(path.join(config.stateDir, 'account-activity.json'), accountActivity, config.stateDir);
-    stateChanged = true;
-  } else if (accountActivityOwner) {
-    try { accountActivity = parseAccountActivity(JSON.parse(await readFile(path.join(config.stateDir, 'account-activity.json'), 'utf8'))); }
-    catch (error) { if (error.code !== 'ENOENT') throw error; }
-  }
-  if (accountActivityOwner && accountActivity !== null && config.codexBinary) {
-    const tokenUsage = await readAccountTokenUsage({ codexBinary: config.codexBinary, window: { from: addDays(asOfDate, -29), to: asOfDate } });
-    accountActivity = attachAccountTokenUsage(accountActivity, tokenUsage, asOfDate);
-    await atomicWrite(path.join(config.stateDir, 'account-activity.json'), accountActivity, config.stateDir);
-    stateChanged = true;
-  }
-  const now = new Date().toISOString();
-  if (config.publisher?.collectionPath) {
-    const snapshot = await readSnapshot(path.join(config.stateDir, 'snapshot.json'), config.stateDir);
-    const collection = activityCollectionFromSnapshot(snapshot);
-    if (args.dryRun) {
-      process.stdout.write(stableJson({ status: 'dry-run', collectionStatus: 'valid' }));
-      return;
-    }
-    const receiptFile = path.join(config.stateDir, 'direct-publication-receipt.json');
-    try {
-      const receipt = JSON.parse(await readFile(receiptFile, 'utf8'));
-      if (!receipt || Object.keys(receipt).sort().join(',') !== 'collectedAt,date,schemaVersion' || receipt.schemaVersion !== 1 || parseDate(receipt.date) > asOfDate || Number.isNaN(Date.parse(receipt.collectedAt))) throw new Error('invalid direct publication receipt');
-      if (new Date(snapshot.collectedAt) <= new Date(receipt.collectedAt)) {
-        process.stdout.write(stableJson({ status: 'already-published', date: receipt.date }));
-        return;
-      }
-    } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
-    }
-    if (stateChanged === false) stateChanged = 'unknown';
-    const result = await publishOwnedCollection(config, collection, {
-      referenceTime: now,
-      buildFinal: async (values) => {
-        if (!accountActivityOwner || accountActivity === null) return null;
-        const current = currentActivityCollections(values, asOfDate);
-        if (current === null) return null;
-        const activity = attachAccountActivity(aggregateCollections(current, { asOfDate, referenceTime: now, staleAfterHours: config.staleAfterHours }), accountActivity);
-        if (!isPublishableActivity(activity)) return null;
-        return generatedActivity(activity);
-      },
-    });
-    await atomicWrite(receiptFile, { schemaVersion: 1, date: asOfDate, collectedAt: snapshot.collectedAt }, config.stateDir);
-    stateChanged = true;
-    process.stdout.write(stableJson(result));
-    return;
-  }
-  const snapshots = await publisherSnapshots(config);
-  if (args.dryRun) {
-    const { activity } = processActivitySurface(snapshots, { asOfDate, referenceTime: now, expectedSourceIds: config.expectedSources.map(({ sourceId }) => sourceId), independentSources: config.independentSources, staleAfterHours: config.staleAfterHours }, accountUsage, accountActivity);
-    const generated = generatedActivity(activity);
-    await publishGenerated(config, generated, { dryRun: true });
-    stateChanged = 'unknown';
-    await atomicWrite(path.join(config.stateDir, 'preview.json'), generated['metrics/codex-activity.json'], config.stateDir);
-    await atomicWrite(path.join(config.stateDir, 'preview.svg'), generated['assets/codex-activity.svg'], config.stateDir);
-    stateChanged = true;
-    process.stdout.write(stableJson({ status: 'dry-run', aggregateStatus: activity.status }));
-    return;
-  }
-  if (stateChanged === false) stateChanged = 'unknown';
-  const result = await publishIfReady({
-    config,
-    snapshots,
-    expectedSourceIds: config.expectedSources.map(({ sourceId }) => sourceId),
-    now,
-    receiptFile: path.join(config.stateDir, 'publication-receipt.json'),
-    publish: async (readySnapshots) => {
-      const { activity } = processActivitySurface(readySnapshots, { asOfDate, referenceTime: now, expectedSourceIds: config.expectedSources.map(({ sourceId }) => sourceId), independentSources: config.independentSources, staleAfterHours: config.staleAfterHours }, accountUsage, accountActivity);
-      if (!isPublishableActivity(activity)) throw new Error('aggregate unavailable');
-      return publishGeneratedUnlocked(config, generatedActivity(activity));
-    },
-  });
-  process.stdout.write(stableJson(result));
+  const activity = await readAccountTokenUsage({ codexBinary: config.codexBinary, window: { from: addDays(asOfDate, -29), to: asOfDate } });
+  const generated = {
+    'metrics/codex-activity.json': stableJson(activity),
+    'assets/codex-activity.svg': renderActivitySvg(activity),
+    'assets/codex-activity-ko.svg': renderActivitySvg(activity, 'ko'),
+  };
+  process.stdout.write(stableJson(await publishGenerated(config, generated, { dryRun: args.dryRun })));
 }
 
 main().catch((error) => {
-  const evidence = classifyFailure
-    ? classifyFailure({ stage: executionStage, error, stateChanged, exitCode: 1 })
-    : startupFailure(error);
+  const evidence = failureEvidence
+    ? failureEvidence({ stage: 'run', error, stateChanged: 'unknown', exitCode: 1 })
+    : { status: 'error', stage: 'startup', exitCode: 1, signal: null, errorClass: 'integrity', stderrClass: 'integrity-rejected', stateChanged: false };
   process.stderr.write(`${JSON.stringify(evidence)}\n`);
   process.exitCode = 1;
 });
