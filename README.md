@@ -31,7 +31,7 @@ I work across product interfaces, design systems, and front-end foundations — 
 
 **Human-led context, judgment, and verification.**
 
-![Agent-driven development workflow](./assets/ai-assisted-development.svg)
+![Agent-driven development workflow](./assets/ai-assisted-development.svg?v=51734af)
 
 **Understand → Delegate → Verify → Integrate**
 
