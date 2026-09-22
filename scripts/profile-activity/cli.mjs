@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 let addDays;
 let failureEvidence;
+let latestCompleteKstDate;
 let parseDate;
 let publishGenerated;
 let readAccountTokenUsage;
@@ -46,7 +47,7 @@ async function verifyBeforeImport(argv) {
 }
 
 async function loadRuntime() {
-  ({ addDays, parseDate, stableJson } = await import('./contract.mjs'));
+  ({ addDays, latestCompleteKstDate, parseDate, stableJson } = await import('./contract.mjs'));
   ({ failureEvidence } = await import('./execution.mjs'));
   ({ readAccountTokenUsage } = await import('./app-server-usage.mjs'));
   ({ readConfig } = await import('./config.mjs'));
@@ -62,17 +63,12 @@ function argumentsFor(argv) {
   return { configFile: rest[configIndex + 1], dryRun: rest.includes('--dry-run'), asOfDate: dateIndex < 0 ? null : parseDate(rest[dateIndex + 1]) };
 }
 
-function todayKst() {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
-  return parts.filter(({ type }) => type !== 'literal').map(({ value }) => value).join('-');
-}
-
 async function main() {
   await verifyBeforeImport(process.argv.slice(2));
   await loadRuntime();
   const args = argumentsFor(process.argv.slice(2));
   const config = await readConfig(args.configFile);
-  const asOfDate = args.asOfDate ?? todayKst();
+  const asOfDate = args.asOfDate ?? latestCompleteKstDate();
   const activity = await readAccountTokenUsage({ codexBinary: config.codexBinary, window: { from: addDays(asOfDate, -29), to: asOfDate } });
   const generated = {
     'metrics/codex-activity.json': stableJson(activity),

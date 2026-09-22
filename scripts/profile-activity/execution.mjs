@@ -21,6 +21,18 @@ export function parseRunOutput(text) {
   return value;
 }
 
+export function parseRunFailure(text) {
+  const value = JSON.parse(text);
+  exactKeys(value, ['status', 'stage', 'exitCode', 'signal', 'errorClass', 'stderrClass', 'stateChanged'], 'run failure');
+  if (value.status !== 'error' || value.stage !== 'run') throw new Error('invalid run failure');
+  if (value.exitCode !== null && !Number.isSafeInteger(value.exitCode)) throw new Error('invalid run failure');
+  if (value.signal !== null && typeof value.signal !== 'string') throw new Error('invalid run failure');
+  if (!['permission', 'validation', 'integrity', 'execution'].includes(value.errorClass)) throw new Error('invalid run failure');
+  if (!['permission-denied', 'validation-rejected', 'integrity-rejected', 'execution-failed'].includes(value.stderrClass)) throw new Error('invalid run failure');
+  if (![true, false, 'unknown'].includes(value.stateChanged)) throw new Error('invalid run failure');
+  return value;
+}
+
 export function failureEvidence({ stage, error, stateChanged = 'unknown', exitCode = error?.status ?? null, signal = error?.signal ?? null }) {
   const permission = ['EACCES', 'EPERM'].includes(error?.code);
   const validation = !permission && /invalid|usage|mismatch|conflict|schema|required|refused|unavailable/i.test(error?.message ?? '');
@@ -43,7 +55,8 @@ export function runInstalled(receiptFile) {
     return parseRunOutput(execFileSync(paths.nodeBinary, [paths.cli, 'run', '--config', paths.config], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 2 * 1024 * 1024 }));
   } catch (error) {
     const failure = new Error('profile activity run failed');
-    failure.evidence = failureEvidence({ stage: 'run', error, stateChanged: 'unknown' });
+    try { failure.evidence = parseRunFailure(error.stderr); }
+    catch { failure.evidence = failureEvidence({ stage: 'run', error, stateChanged: 'unknown' }); }
     throw failure;
   }
 }

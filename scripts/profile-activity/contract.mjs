@@ -24,6 +24,12 @@ export function addDays(date, amount) {
   return value.toISOString().slice(0, 10);
 }
 
+export function latestCompleteKstDate(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now);
+  const today = parts.filter(({ type }) => type !== 'literal').map(({ value }) => value).join('-');
+  return addDays(today, -1);
+}
+
 function parseWindow(value) {
   exactKeys(value, ['from', 'to'], 'window');
   const window = { from: parseDate(value.from), to: parseDate(value.to) };

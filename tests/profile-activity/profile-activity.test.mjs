@@ -8,8 +8,8 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { sanitizeAccountUsageResponse } from '../../scripts/profile-activity/app-server-usage.mjs';
 import { parseConfig } from '../../scripts/profile-activity/config.mjs';
-import { addDays, parsePublicActivity, stableJson } from '../../scripts/profile-activity/contract.mjs';
-import { failureEvidence, parseRunOutput } from '../../scripts/profile-activity/execution.mjs';
+import { addDays, latestCompleteKstDate, parsePublicActivity, stableJson } from '../../scripts/profile-activity/contract.mjs';
+import { failureEvidence, parseRunOutput, runInstalled } from '../../scripts/profile-activity/execution.mjs';
 import { assertAllowedPaths, publishGenerated, verifyRuntimeManifest, withPublisherLock } from '../../scripts/profile-activity/publish.mjs';
 import { renderActivitySvg } from '../../scripts/profile-activity/render.mjs';
 import { atomicWrite } from '../../scripts/profile-activity/storage.mjs';
@@ -71,6 +71,10 @@ test('public schema accepts only complete App Server token activity', () => {
   assert.throws(() => parsePublicActivity({ ...activity(), unexpected: {} }), /keys/);
   assert.throws(() => parsePublicActivity({ ...activity(), days: activity().days.slice(1) }), /30 entries/);
   assert.throws(() => parsePublicActivity({ ...activity(), summary: { ...activity().summary, lifetimeTokens: null } }), /lifetimeTokens/);
+});
+
+test('default activity date uses the previous complete KST day', () => {
+  assert.equal(latestCompleteKstDate(new Date('2026-09-22T00:30:00Z')), '2026-09-21');
 });
 
 test('App Server response is reduced without retaining arbitrary fields', () => {
@@ -153,6 +157,22 @@ test('installed execution accepts only terminal run statuses', () => {
   assert.deepEqual(parseRunOutput('{"status":"published","commit":"0123456789012345678901234567890123456789"}'), { status: 'published', commit: '0123456789012345678901234567890123456789' });
   assert.throws(() => parseRunOutput('{"status":"awaiting-source"}'), /status/);
   assert.equal(failureEvidence({ stage: 'run', error: new Error('account token usage unavailable') }).errorClass, 'validation');
+});
+
+test('installed execution preserves sanitized child failure evidence', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'profile-execution-'));
+  const stateDir = path.join(root, 'state');
+  const runtimeDir = path.join(root, 'runtime');
+  const receiptFile = path.join(stateDir, 'installation-receipt.json');
+  const evidence = { status: 'error', stage: 'run', exitCode: 1, signal: null, errorClass: 'validation', stderrClass: 'validation-rejected', stateChanged: false };
+  await mkdir(stateDir);
+  await mkdir(runtimeDir);
+  await writeFile(path.join(runtimeDir, 'cli.mjs'), `process.stderr.write(${JSON.stringify(`${JSON.stringify(evidence)}\n`)}); process.exitCode = 1;\n`);
+  await writeFile(receiptFile, stableJson({ schemaVersion: 2, nodeBinary: process.execPath, runtimeDir, stateDir }));
+  assert.throws(() => runInstalled(receiptFile), (error) => {
+    assert.deepEqual(error.evidence, evidence);
+    return true;
+  });
 });
 
 test('publisher updates only generated files from the newest remote branch', async () => {
