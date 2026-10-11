@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="440" role="img" aria-labelledby="title desc">
+  <title id="title">Percentage-width responsive SVG test</title>
+  <desc id="desc">No viewBox or fixed intrinsic width. Internal CSS changes three equal nodes from a row to a column at 600px.</desc>
+  <!-- shortcut: fixed 440px height leaves desktop whitespace; revisit before profile publication. -->
+  <style>
+    svg{width:100%;height:440px}
+    text{font-family:Arial,sans-serif;fill:#24292f;font-size:16px}
+    rect{fill:#fff;stroke:#8c959f;stroke-width:1px}
+    .frame{width:calc(100% - 1px);height:calc(100% - 1px)}
+    .card{width:calc((100% - 72px)/3);height:84px}
+    .node{transform-box:view-box}
+    .two{transform:translateX(calc((100% - 24px)/3))}
+    .three{transform:translateX(calc((100% - 24px)*2/3))}
+    .measure{fill:#24292f;stroke:none}
+    .narrow{display:none}
+    @media(max-width:600px){
+      .wide{display:none}.narrow{display:block}
+      .card{width:calc(100% - 40px)}
+      .two{transform:translateY(108px)}
+      .three{transform:translateY(216px)}
+      .summary{transform:translateY(216px)}
+    }
+  </style>
+  <rect class="frame" x=".5" y=".5"/>
+  <g class="wide"><text x="20" y="32">WIDE / 16px / width 100%</text></g>
+  <g class="narrow"><text x="20" y="32">NARROW / 16px / 100%</text></g>
+  <g class="node one"><rect class="card" x="20" y="55"/><text x="34" y="88">Node 1 · placeholder text</text></g>
+  <g class="node two"><rect class="card" x="20" y="55"/><text x="34" y="88">Node 2 · placeholder text</text></g>
+  <g class="node three"><rect class="card" x="20" y="55"/><text x="34" y="88">Node 3 · placeholder text</text></g>
+  <g class="summary"><text x="20" y="177">SVG text stays readable.</text></g>
+  <rect class="measure" x="20" y="410" width="16" height="16"/>
+  <text x="44" y="423" style="font-size:12px">16px unit</text>
+</svg>

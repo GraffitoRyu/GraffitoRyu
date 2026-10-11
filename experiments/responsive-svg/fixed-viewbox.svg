@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="240" viewBox="0 0 900 240" role="img" aria-labelledby="title desc">
+  <title id="title">Fixed viewBox CSS test</title>
+  <desc id="desc">Internal media query switches labels at 600px. Text still follows the viewBox scale.</desc>
+  <style>
+    text{font-family:Arial,sans-serif;fill:#24292f;font-size:16px}
+    rect{fill:#fff;stroke:#8c959f;stroke-width:1px}
+    .narrow{display:none}
+    @media(max-width:600px){.wide{display:none}.narrow{display:block}}
+  </style>
+  <rect x=".5" y=".5" width="899" height="239"/>
+  <g class="wide"><text x="20" y="32">WIDE / 16px / fixed viewBox</text></g>
+  <g class="narrow"><text x="20" y="32">NARROW / 16px / fixed viewBox</text></g>
+  <rect x="20" y="55" width="270" height="84"/>
+  <rect x="315" y="55" width="270" height="84"/>
+  <rect x="610" y="55" width="270" height="84"/>
+  <text x="34" y="88">Node 1 · placeholder text</text>
+  <text x="329" y="88">Node 2 · placeholder text</text>
+  <text x="624" y="88">Node 3 · placeholder text</text>
+  <text x="20" y="177">In practice: trial text, not approved profile copy.</text>
+</svg>

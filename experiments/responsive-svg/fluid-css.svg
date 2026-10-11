@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="240" role="img" aria-labelledby="title desc">
+  <title id="title">CSS-only SVG sizing test</title>
+  <desc id="desc">No viewBox. CSS changes root height and geometry below 600px. Checks whether an external img acquires the new height.</desc>
+  <style>
+    svg{width:900px;height:240px}
+    text{font-family:Arial,sans-serif;fill:#24292f;font-size:16px}
+    rect{fill:#fff;stroke:#8c959f;stroke-width:1px}
+    .card{width:calc((100% - 72px)/3);height:84px}
+    .node{transform-box:view-box}
+    .two{transform:translateX(calc((100% - 24px)/3))}
+    .three{transform:translateX(calc((100% - 24px)*2/3))}
+    .narrow{display:none}
+    @media(max-width:600px){
+      svg{height:440px}
+      .wide{display:none}.narrow{display:block}
+      .card{width:calc(100% - 40px)}
+      .two{transform:translateY(108px)}
+      .three{transform:translateY(216px)}
+      .summary{transform:translateY(184px)}
+    }
+  </style>
+  <rect x=".5" y=".5" width="99.8%" height="99.8%"/>
+  <g class="wide"><text x="20" y="32">WIDE / 16px / 240px</text></g>
+  <g class="narrow"><text x="20" y="32">NARROW / 16px / 440px</text></g>
+  <g class="node one"><rect class="card" x="20" y="55"/><text x="34" y="88">Node 1 · placeholder text</text></g>
+  <g class="node two"><rect class="card" x="20" y="55"/><text x="34" y="88">Node 2 · placeholder text</text></g>
+  <g class="node three"><rect class="card" x="20" y="55"/><text x="34" y="88">Node 3 · placeholder text</text></g>
+  <g class="summary"><text x="20" y="177">In practice: trial copy.</text></g>
+</svg>

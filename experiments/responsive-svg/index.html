@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SVG 내부 CSS 실제 표시 시험</title>
+<style>
+  *{box-sizing:border-box}body{margin:0;padding:24px;font:14px/1.5 system-ui,sans-serif;color:#24292f;background:#f6f8fa}
+  h1{font-size:22px;margin:0 0 8px}h2{font-size:16px;margin:24px 0 8px}p{max-width:850px;margin:0 0 16px}
+  .case{margin-bottom:24px;width:max-content;max-width:100%;overflow:auto}.host{padding:24px;border:1px solid #d0d7de;background:#fff;width:calc(var(--content) + 50px)}
+  .markdown{font-size:14px;line-height:21px}img{display:block;max-width:100%;height:auto}.caption{font-weight:600;margin:12px 0 6px}
+</style>
+<h1>SVG 내부 CSS 실제 표시 시험</h1>
+<p>기술 시험용 문구임. 현재 요약판은 미확정이며, 이 파일은 Figma 시안이나 공개 프로필을 교체하지 않음. 이미지로 불러온 SVG의 미디어 쿼리·글자 크기·높이 변화를 비교함.</p>
+<p>각 카드의 콘텐츠 폭은 GitHub 실측값 846·831·575·293·263px임. 바깥 브라우저 폭과 SVG 내부 미디어 쿼리 기준을 구분함.</p>
+<div id="cases"></div>
+<script>
+for(const width of [846,831,575,293,263]){
+  const section=document.createElement('section');section.className='case';
+  const heading=document.createElement('h2');heading.textContent=`콘텐츠 ${width}px`;section.append(heading);
+  const host=document.createElement('div');host.className='host markdown';host.style.setProperty('--content',`${width}px`);host.dataset.content=width;
+  for(const [src,label] of [['fixed-viewbox.svg','A · 고정 viewBox + 내부 CSS'],['fluid-css.svg','B · viewBox 없이 내부 CSS로 배치·높이 변경'],['percent-width.svg','C · 퍼센트 폭 + 내부 CSS 재배치']]){
+    const caption=document.createElement('div');caption.className='caption';caption.textContent=label;host.append(caption);
+    const img=document.createElement('img');img.src=src;img.alt=label;img.width=900;img.dataset.variant=src;host.append(img);
+  }
+  const paragraph=document.createElement('p');paragraph.textContent='이 본문은 이미지 밖의 14px 텍스트임. SVG 내부 글자와 크기를 비교하기 위한 기준이며, 설명의 표현 방식은 아직 확정하지 않음.';host.append(paragraph);
+  section.append(host);document.querySelector('#cases').append(section);
+}
+</script>
+</html>
