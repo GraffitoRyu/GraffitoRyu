@@ -29,15 +29,18 @@ I work across product interfaces, design systems, and front-end foundations — 
 
 ## Agent-Driven Development
 
-**Human-led context, judgment, and verification.**
+<picture>
+  <source media="(max-width: 1279px)" srcset="./assets/ai-assisted-development-narrow.svg">
+  <img src="./assets/ai-assisted-development.svg" alt="Plan, Execute, Verify, and Decide, with correction, reassessment, and deferral paths" width="846">
+</picture>
 
-![Agent-driven development workflow](https://raw.githubusercontent.com/GraffitoRyu/GraffitoRyu/51734af4f207e0e3d066d63ad15c64a71113acce/assets/ai-assisted-development.svg)
+`Context` · `Git safety` · `Handoff`
 
-**Understand → Delegate → Verify → Integrate**
+### In practice
 
-`Agent workflows` · `Runtime verification` · `Automation`
+I set the scope and use Codex to implement, refactor, and review code, and to automate repeatable work.
 
-I use Codex for implementation, refactoring, review, and repeatable development work while keeping the product context and acceptance criteria explicit.
+I keep product context explicit and verify runtime behavior; the full agreed workflow and acceptance criteria define completion.
 
 <a href="https://chatgpt.com/u/yth.gpt">
   <img src="./assets/codex-activity.svg" alt="Codex account activity dashboard" width="900" />
