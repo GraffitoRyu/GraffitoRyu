@@ -3,26 +3,18 @@
   "metricScope": "codex-account-token-activity",
   "timezone": "Asia/Seoul",
   "window": {
-    "from": "2026-09-23",
-    "to": "2026-10-22"
+    "from": "2026-09-25",
+    "to": "2026-10-24"
   },
-  "asOfDate": "2026-10-22",
+  "asOfDate": "2026-10-24",
   "summary": {
-    "lifetimeTokens": 72613161695,
+    "lifetimeTokens": 74949097339,
     "peakDailyTokens": 2507788994,
     "longestRunningTurnSec": 59711,
-    "currentStreakDays": 67,
-    "longestStreakDays": 67
+    "currentStreakDays": 69,
+    "longestStreakDays": 69
   },
   "days": [
-    {
-      "date": "2026-09-23",
-      "tokens": 479168609
-    },
-    {
-      "date": "2026-09-24",
-      "tokens": 148734819
-    },
     {
       "date": "2026-09-25",
       "tokens": 117280256
@@ -133,7 +125,15 @@
     },
     {
       "date": "2026-10-22",
-      "tokens": 741292277
+      "tokens": 1533640635
+    },
+    {
+      "date": "2026-10-23",
+      "tokens": 1441520391
+    },
+    {
+      "date": "2026-10-24",
+      "tokens": 102066895
     }
   ]
 }
